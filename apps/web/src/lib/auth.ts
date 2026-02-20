@@ -59,15 +59,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           | "suspended";
       }
 
-      // On session update, re-fetch from DB to get latest role/status
+      // On session update, re-fetch from DB to get latest data
       if (trigger === "update" && token.id) {
         const dbUser = await prisma.user.findUnique({
           where: { id: token.id as string },
-          select: { role: true, status: true },
+          select: { role: true, status: true, name: true, image: true },
         });
         if (dbUser) {
           token.role = dbUser.role;
           token.status = dbUser.status;
+          token.name = dbUser.name;
+          token.picture = dbUser.image;
         }
       }
 

@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 1 — Foundation
-**Step corrente**: 7 (Step 1.6 completato)
-**Ultimo commit**: feat(admin): step 1.6 — admin panel user management, DataTable, filters, actions
+**Step corrente**: 8 (Step 1.7 completato)
+**Ultimo commit**: feat(profile): step 1.7 — user profile page, PATCH /api/me, connected providers
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -236,12 +236,15 @@ ai-visibility-platform/
 - **Note**: Query Prisma diretta nel Server Component page (più efficiente che chiamare l'API)
 - **Done when**: Build OK (15 route), admin vede/filtra utenti, può cambiare ruoli e status ✅
 
-### Step 1.7 — User Profile & Settings
-- [ ] Pagina `/settings/profile`
-- [ ] Form modifica nome, avatar
-- [ ] API route: `GET /api/me`, `PATCH /api/me`
-- [ ] Visualizzazione provider collegati (Google, credentials)
-- **Done when**: Utente può vedere e modificare il proprio profilo
+### Step 1.7 — User Profile & Settings ✅
+- [x] `/settings` → redirect a `/settings/profile`
+- [x] Pagina `/settings/profile` con form nome + URL avatar (preview live dell'avatar)
+- [x] Sidebar destra: info account (email, data registrazione) + provider collegati
+- [x] `GET /api/me` — profilo corrente + providers calcolati (Google, credentials)
+- [x] `PATCH /api/me` — aggiornamento nome e immagine con Zod
+- [x] `useSession().update()` dopo salvataggio per aggiornare UserButton in tempo reale
+- [x] jwt callback aggiornato: refresh di name/image da DB su trigger "update"
+- **Done when**: Build OK (17 route), utente può modificare profilo, UserButton si aggiorna ✅
 
 ### Step 1.8 — Audit Log System
 - [ ] Modello Prisma `AuditLog`
