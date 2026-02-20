@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2.2 completato
-**Ultimo commit**: feat(ui): step 2.2 — Projects UI (list + detail)
+**Step corrente**: 2.3 completato
+**Ultimo commit**: feat(content): step 2.3 — Content Add (singolo manuale)
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -602,18 +602,20 @@ const updateContentSchema = createContentSchema.partial().extend({
 - [x] Loading skeletons per lista e dettaglio
 - **Done when**: Build OK (23 route), CRUD completo via UI, navigazione fluida, stati vuoti gestiti ✅
 
-### Step 2.3 — Content Add (Singolo)
-- [ ] `POST /api/projects/:id/content` — aggiunta singolo contenuto
-- [ ] Validazione Zod in `lib/validations/content.ts`
-- [ ] Calcolo `contentHash` (SHA-256 di `url` o `rawContent`) per dedup
-- [ ] Calcolo `wordCount` da `rawContent` se presente
-- [ ] Generazione `excerpt` (primi 200 caratteri di rawContent) se non fornito
-- [ ] Check duplicati: se hash esiste nel progetto, ritorna errore 409
-- [ ] Ownership check del progetto
-- [ ] Nella pagina `/projects/:id`, aggiungere bottone "Add Content" → dialog/pagina
-- [ ] Form: URL, titolo, piattaforma (select), tipo (select), contenuto (textarea opzionale), data pubblicazione
-- [ ] Se l'utente inserisce solo URL: per ora salvare senza contenuto (il fetch verrà nella Fase 2b)
-- **Done when**: Utente può aggiungere contenuti manualmente, dedup funziona, form validato
+### Step 2.3 — Content Add (Singolo) ✅
+- [x] `POST /api/projects/:id/content` — aggiunta singolo contenuto, discoveryMethod=MANUAL
+- [x] Validazione Zod in `lib/validations/content.ts` (Zod v4: nativeEnum senza required_error)
+- [x] Calcolo `contentHash` (SHA-256 di `url` || `rawContent`) per dedup
+- [x] Calcolo `wordCount` da `rawContent` se presente
+- [x] Generazione `excerpt` (primi 200 caratteri di rawContent) se non fornito
+- [x] Check duplicati: se hash esiste nel progetto, ritorna errore 409
+- [x] Blocco aggiunta su progetto archiviato → 400
+- [x] Ownership check del progetto
+- [x] Bottone "Aggiungi contenuto" in `/projects/:id` → `add-content-dialog.tsx`
+- [x] Form: titolo, URL, piattaforma (select), tipo (select), data pubblicazione, contenuto (textarea)
+- [x] `CONTENT_CREATED` aggiunto a `AUDIT_ACTIONS` e loggato
+- **Note**: Zod v4 — `nativeEnum` non accetta `required_error`, rimosso
+- **Done when**: Build OK (24 route), utente può aggiungere contenuti, dedup funziona ✅
 
 ### Step 2.4 — Content List & Filters
 - [ ] `GET /api/projects/:id/content` con paginazione e filtri
