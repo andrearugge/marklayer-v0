@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { assertProjectOwnership } from "@/lib/projects";
 import { EditProjectDialog } from "./edit-project-dialog";
 import { ArchiveProjectButton } from "./archive-project-button";
+import { AddContentDialog } from "./add-content-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -156,7 +157,8 @@ export default async function ProjectDetailPage({ params }: PageProps) {
           </div>
 
           {!isArchived && (
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              <AddContentDialog projectId={project.id} />
               <EditProjectDialog project={project} />
               <ArchiveProjectButton
                 projectId={project.id}

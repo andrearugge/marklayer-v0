@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2.1 completato
-**Ultimo commit**: feat(api): step 2.1 — Projects CRUD API, ownership helper, audit log
+**Step corrente**: 2.2 completato
+**Ultimo commit**: feat(ui): step 2.2 — Projects UI (list + detail)
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -591,16 +591,16 @@ const updateContentSchema = createContentSchema.partial().extend({
 - [x] Audit log: `project.created`, `project.updated`, `project.archived` con metadata
 - **Done when**: Build OK (21 route), endpoints presenti, ownership e audit verificati ✅
 
-### Step 2.2 — Projects UI
-- [ ] Pagina `/projects` — lista progetti come cards (nome, dominio, conteggio contenuti, data creazione)
-- [ ] Stato empty: messaggio + CTA per creare primo progetto
-- [ ] Dialog/modal per creare nuovo progetto (nome, descrizione, dominio)
-- [ ] Pagina `/projects/:id` — overview progetto con stats
-- [ ] Azioni: modifica progetto (dialog), archivia progetto (conferma)
-- [ ] Navigazione: click su progetto → pagina dettaglio
-- [ ] Breadcrumbs aggiornati per le nuove pagine
-- **Componenti shadcn**: Card, Dialog (se non già installati)
-- **Done when**: CRUD completo via UI, navigazione fluida, stati vuoti gestiti
+### Step 2.2 — Projects UI ✅
+- [x] Pagina `/projects` — lista progetti come cards (nome, dominio, conteggio contenuti, data creazione)
+- [x] Stato empty: messaggio + CTA per creare primo progetto
+- [x] Dialog/modal per creare nuovo progetto (nome, descrizione, dominio)
+- [x] Pagina `/projects/:id` — overview progetto con stats (totale, per piattaforma, tipo, status)
+- [x] Azioni: modifica progetto (dialog pre-compilato), archivia progetto (AlertDialog conferma)
+- [x] Navigazione: click su progetto → pagina dettaglio, back link "Tutti i progetti"
+- [x] Breadcrumbs aggiornati: UUID detection → "Detail", label "audit-log"
+- [x] Loading skeletons per lista e dettaglio
+- **Done when**: Build OK (23 route), CRUD completo via UI, navigazione fluida, stati vuoti gestiti ✅
 
 ### Step 2.3 — Content Add (Singolo)
 - [ ] `POST /api/projects/:id/content` — aggiunta singolo contenuto
