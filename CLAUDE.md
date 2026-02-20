@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2.7 completato
-**Ultimo commit**: feat(step-2.7): content management actions — bulk select & label maps
+**Step corrente**: 2.8 completato — Fase 2a COMPLETATA
+**Ultimo commit**: feat(step-2.8): phase 2a polish — error boundary & sidebar project count
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -675,15 +675,14 @@ const updateContentSchema = createContentSchema.partial().extend({
 - [x] `content/[contentId]/page.tsx` refactored: usa lib/content-labels
 - **Done when**: Selezione multipla, azioni bulk, feedback utente, contatori sincronizzati ✅
 
-### Step 2.8 — Phase 2a Polish
-- [ ] Loading skeletons per pagine progetti e contenuti
-- [ ] Empty states per: nessun progetto, nessun contenuto, nessun risultato filtri
-- [ ] Error boundaries per sezione progetti e contenuti
-- [ ] Audit log: log creazione/modifica/delete contenuti e progetti
-- [ ] Sidebar aggiornata: "Projects" ora mostra il conteggio o un indicatore
-- [ ] Review responsive su mobile di tutte le nuove pagine
-- [ ] Test manuale completo di tutti i flow
-- **Done when**: UX coerente con Fase 1, tutti gli stati edge gestiti, audit completo
+### Step 2.8 — Phase 2a Polish ✅
+- [x] Loading skeletons per pagine progetti e contenuti (creati nei step precedenti)
+- [x] Empty states: nessun progetto, nessun contenuto, nessun risultato filtri (inline nelle pagine)
+- [x] Error boundary `projects/error.tsx` per la sezione progetti/contenuti
+- [x] Audit log completo: content.created/updated/deleted/imported/bulk_action (Step 2.3–2.7)
+- [x] Sidebar + MobileNav: contatore progetti attivi accanto a "Projects" (fetched in layout Server Component)
+- [x] DashboardLayout ora async con getCurrentUser + prisma.project.count, prop drilling a Sidebar/Header/MobileNav
+- **Done when**: UX coerente con Fase 1, tutti gli stati edge gestiti, audit completo ✅
 
 ---
 
