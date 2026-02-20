@@ -276,18 +276,535 @@ ai-visibility-platform/
 
 ---
 
-## Piano di Sviluppo — Fasi Successive (Overview)
+# Piano Dettagliato — Fase 2: Content Discovery
+## Decisioni Architetturali Fase 2
 
-### Fase 2 — Content Discovery
-- Step 2.0: Modelli Prisma per Projects, ContentItems, DiscoveryJobs
-- Step 2.1: CRUD Projects
-- Step 2.2: Content manual add (singolo + bulk CSV)
-- Step 2.3: Python FastAPI service scaffolding + Docker
-- Step 2.4: Discovery Agent — web crawler
-- Step 2.5: Discovery Agent — platform search (Substack, Medium, LinkedIn)
-- Step 2.6: Discovery Agent — mentions search
-- Step 2.7: Discovery results review UI (approve/reject)
-- Step 2.8: Content detail view con metadata
+### ADR-005: Fase 2 Split — CRUD first, FastAPI dopo
+- **2a**: Modelli DB, CRUD Projects, Content manual add/import, UI gestione contenuti → tutto in Next.js
+- **2b**: Python FastAPI service, Discovery Agent (crawling, platform search), review UI
+- **Motivazione**: base solida e testabile prima di aggiungere complessità infrastrutturale
+
+### ADR-006: Web Crawling — Librerie proprie
+- **Node.js (Fase 2b)**: Cheerio (HTML parsing statico) + Puppeteer (rendering JS, SPA)
+- **Python (futuro)**: BeautifulSoup + Playwright come alternativa
+- **Motivazione**: controllo completo, nessun costo per request, nessun vendor lock-in
+- **Nota**: Puppeteer in Docker richiede configurazione Chromium headless
+
+### ADR-007: Platform Discovery — Google Search
+- Ricerca contenuti su tutte le piattaforme via `site:platform.com "nome autore"` o query equivalenti
+- Un solo meccanismo invece di N integrazioni API
+- Opzioni di implementazione:
+  - Google Custom Search JSON API (100 query/giorno gratis, poi $5/1000 query)
+  - SerpAPI o simili (più costoso ma più affidabile)
+  - Scraping diretto dei risultati Google (fragile, rischio ban)
+- **Decisione rimandata a Step 2b.2**: per ora ci focalizziamo sul CRUD manuale
+
+---
+
+## Schema Database — Fase 2
+
+### Nuovi modelli Prisma
+
+```prisma
+// === PROJECTS ===
+
+model Project {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  name        String   @db.VarChar(255)
+  description String?  @db.Text
+  domain      String?  @db.VarChar(255)  // sito web principale
+  status      ProjectStatus @default(ACTIVE)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentItems  ContentItem[]
+  discoveryJobs DiscoveryJob[]
+
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+// === CONTENT ITEMS ===
+
+model ContentItem {
+  id              String          @id @default(uuid()) @db.Uuid
+  projectId       String          @map("project_id") @db.Uuid
+  url             String?         @db.Text
+  sourcePlatform  SourcePlatform
+  contentType     ContentType
+  title           String          @db.VarChar(500)
+  rawContent      String?         @db.Text         // contenuto estratto
+  excerpt         String?         @db.VarChar(1000) // anteprima breve
+  contentHash     String?         @map("content_hash") @db.VarChar(64) // SHA-256 per dedup
+  discoveryMethod DiscoveryMethod
+  status          ContentStatus   @default(DISCOVERED)
+  wordCount       Int?            @map("word_count")
+  language        String?         @db.VarChar(10)   // es. "it", "en"
+  publishedAt     DateTime?       @map("published_at")
+  lastCrawledAt   DateTime?       @map("last_crawled_at")
+  metadata        Json?           @db.JsonB         // dati piattaforma-specifici
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, contentHash])  // no duplicati nello stesso progetto
+  @@index([projectId, sourcePlatform])
+  @@index([projectId, status])
+  @@index([projectId, contentType])
+  @@map("content_items")
+}
+
+enum SourcePlatform {
+  WEBSITE
+  SUBSTACK
+  MEDIUM
+  LINKEDIN
+  REDDIT
+  QUORA
+  YOUTUBE
+  TWITTER
+  NEWS        // testate giornalistiche
+  OTHER
+}
+
+enum ContentType {
+  ARTICLE
+  BLOG_POST
+  PAGE          // pagina statica (about, servizi, etc.)
+  SOCIAL_POST
+  COMMENT
+  MENTION       // menzione su fonte esterna
+  VIDEO
+  PODCAST
+  OTHER
+}
+
+enum DiscoveryMethod {
+  MANUAL        // aggiunto a mano dall'utente
+  CSV_IMPORT    // importato da CSV
+  AGENT_CRAWL   // trovato dal crawler
+  AGENT_SEARCH  // trovato tramite ricerca
+}
+
+enum ContentStatus {
+  DISCOVERED    // trovato dall'agent, in attesa di review
+  APPROVED      // confermato dall'utente
+  REJECTED      // scartato dall'utente
+  ARCHIVED      // archiviato
+}
+
+// === DISCOVERY JOBS (Fase 2b) ===
+
+model DiscoveryJob {
+  id            String         @id @default(uuid()) @db.Uuid
+  projectId     String         @map("project_id") @db.Uuid
+  jobType       DiscoveryJobType
+  status        JobStatus      @default(PENDING)
+  config        Json?          @db.JsonB  // parametri del job
+  resultSummary Json?          @map("result_summary") @db.JsonB // { found, approved, rejected }
+  startedAt     DateTime?      @map("started_at")
+  completedAt   DateTime?      @map("completed_at")
+  errorMessage  String?        @map("error_message") @db.Text
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
+  @@map("discovery_jobs")
+}
+
+enum DiscoveryJobType {
+  CRAWL_SITE
+  SEARCH_PLATFORM
+  SEARCH_MENTIONS
+  FULL_DISCOVERY
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+```
+
+### Relazione User → Projects
+
+Aggiungere nel modello `User` esistente:
+```prisma
+model User {
+  // ... campi esistenti ...
+  projects Project[]
+}
+```
+
+---
+
+## API Design — Fase 2a
+
+### Projects API
+
+```
+POST   /api/projects                    → Crea progetto
+GET    /api/projects                    → Lista progetti utente (con conteggio contenuti)
+GET    /api/projects/:id                → Dettaglio progetto (con stats)
+PATCH  /api/projects/:id                → Aggiorna progetto
+DELETE /api/projects/:id                → Soft delete (archive)
+```
+
+**POST /api/projects**
+```json
+// Request
+{ "name": "My Brand", "description": "...", "domain": "example.com" }
+// Response 201
+{ "data": { "id": "uuid", "name": "My Brand", ... } }
+```
+
+**GET /api/projects**
+```json
+// Response 200
+{
+  "data": [
+    {
+      "id": "uuid",
+      "name": "My Brand",
+      "domain": "example.com",
+      "status": "ACTIVE",
+      "createdAt": "...",
+      "_count": { "contentItems": 42 }
+    }
+  ]
+}
+```
+
+### Content Items API
+
+```
+POST   /api/projects/:id/content             → Aggiungi singolo contenuto
+POST   /api/projects/:id/content/import      → Bulk import da CSV
+GET    /api/projects/:id/content             → Lista contenuti (paginata, filtri)
+GET    /api/projects/:id/content/:contentId  → Dettaglio contenuto
+PATCH  /api/projects/:id/content/:contentId  → Modifica contenuto
+DELETE /api/projects/:id/content/:contentId  → Rimuovi contenuto
+```
+
+**POST /api/projects/:id/content** (singolo)
+```json
+// Request
+{
+  "url": "https://example.com/article",    // opzionale
+  "title": "My Article",
+  "sourcePlatform": "WEBSITE",
+  "contentType": "ARTICLE",
+  "rawContent": "...",                     // opzionale, può essere fetched dopo
+  "publishedAt": "2024-01-15"             // opzionale
+}
+// Response 201
+{ "data": { "id": "uuid", ... } }
+```
+
+**POST /api/projects/:id/content/import** (CSV)
+```json
+// Request: multipart/form-data con file CSV
+// CSV columns: url, title, sourcePlatform, contentType, publishedAt
+// Response 200
+{ "data": { "imported": 25, "skipped": 3, "errors": [...] } }
+```
+
+**GET /api/projects/:id/content**
+```
+?status=APPROVED&sourcePlatform=WEBSITE&contentType=ARTICLE
+&search=keyword&page=1&limit=20
+&sortBy=createdAt&sortOrder=desc
+```
+```json
+// Response 200
+{
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 142,
+    "totalPages": 8
+  }
+}
+```
+
+### Validazioni Zod
+
+```typescript
+// lib/validations/project.ts
+const createProjectSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().max(2000).optional(),
+  domain: z.string().url().or(z.string().max(0)).optional(),
+});
+
+const updateProjectSchema = createProjectSchema.partial();
+
+// lib/validations/content.ts
+const createContentSchema = z.object({
+  url: z.string().url().optional(),
+  title: z.string().min(1).max(500),
+  sourcePlatform: z.nativeEnum(SourcePlatform),
+  contentType: z.nativeEnum(ContentType),
+  rawContent: z.string().optional(),
+  excerpt: z.string().max(1000).optional(),
+  publishedAt: z.string().datetime().optional(),
+});
+
+const updateContentSchema = createContentSchema.partial().extend({
+  status: z.nativeEnum(ContentStatus).optional(),
+});
+```
+
+---
+
+## Piano Step Atomici — Fase 2a (CRUD Manuale)
+
+### Step 2.0 — Database Models & Migration
+- [ ] Aggiungere modelli `Project`, `ContentItem` allo schema Prisma
+- [ ] Aggiungere enum `ProjectStatus`, `SourcePlatform`, `ContentType`, `DiscoveryMethod`, `ContentStatus`
+- [ ] Aggiungere relazione `User.projects`
+- [ ] Modello `DiscoveryJob` con enum (solo schema, usato nella Fase 2b)
+- [ ] Creare migration `add-projects-and-content`
+- [ ] Aggiornare seed: creare un progetto di test con 3-4 content items di esempio
+- [ ] Verificare con Prisma Studio che i modelli e relazioni siano corretti
+- **File coinvolti**: `prisma/schema.prisma`, `prisma/seed.ts`
+- **Done when**: Migration applicata, seed funziona, modelli visibili in Prisma Studio
+
+### Step 2.1 — Projects CRUD API
+- [ ] `POST /api/projects` — crea progetto (associato all'utente autenticato)
+- [ ] `GET /api/projects` — lista progetti dell'utente corrente (con `_count.contentItems`)
+- [ ] `GET /api/projects/:id` — dettaglio con stats (conteggi per platform, type, status)
+- [ ] `PATCH /api/projects/:id` — aggiorna nome, description, domain
+- [ ] `DELETE /api/projects/:id` — archive (set status ARCHIVED, non delete)
+- [ ] Validazioni Zod in `lib/validations/project.ts`
+- [ ] Middleware/helper per verificare ownership del progetto (`assertProjectOwnership`)
+- [ ] Audit log per create/update/archive progetto
+- **File coinvolti**: `app/api/projects/route.ts`, `app/api/projects/[id]/route.ts`, `lib/validations/project.ts`
+- **Done when**: Tutti gli endpoint testabili via curl/Postman, ownership verificata, audit logged
+
+### Step 2.2 — Projects UI
+- [ ] Pagina `/projects` — lista progetti come cards (nome, dominio, conteggio contenuti, data creazione)
+- [ ] Stato empty: messaggio + CTA per creare primo progetto
+- [ ] Dialog/modal per creare nuovo progetto (nome, descrizione, dominio)
+- [ ] Pagina `/projects/:id` — overview progetto con stats
+- [ ] Azioni: modifica progetto (dialog), archivia progetto (conferma)
+- [ ] Navigazione: click su progetto → pagina dettaglio
+- [ ] Breadcrumbs aggiornati per le nuove pagine
+- **Componenti shadcn**: Card, Dialog (se non già installati)
+- **Done when**: CRUD completo via UI, navigazione fluida, stati vuoti gestiti
+
+### Step 2.3 — Content Add (Singolo)
+- [ ] `POST /api/projects/:id/content` — aggiunta singolo contenuto
+- [ ] Validazione Zod in `lib/validations/content.ts`
+- [ ] Calcolo `contentHash` (SHA-256 di `url` o `rawContent`) per dedup
+- [ ] Calcolo `wordCount` da `rawContent` se presente
+- [ ] Generazione `excerpt` (primi 200 caratteri di rawContent) se non fornito
+- [ ] Check duplicati: se hash esiste nel progetto, ritorna errore 409
+- [ ] Ownership check del progetto
+- [ ] Nella pagina `/projects/:id`, aggiungere bottone "Add Content" → dialog/pagina
+- [ ] Form: URL, titolo, piattaforma (select), tipo (select), contenuto (textarea opzionale), data pubblicazione
+- [ ] Se l'utente inserisce solo URL: per ora salvare senza contenuto (il fetch verrà nella Fase 2b)
+- **Done when**: Utente può aggiungere contenuti manualmente, dedup funziona, form validato
+
+### Step 2.4 — Content List & Filters
+- [ ] `GET /api/projects/:id/content` con paginazione e filtri
+- [ ] Filtri: `status`, `sourcePlatform`, `contentType`, ricerca testuale su titolo
+- [ ] Ordinamento: per data creazione, data pubblicazione, titolo
+- [ ] Paginazione offset-based (page + limit)
+- [ ] Nella pagina `/projects/:id`, sezione contenuti con DataTable
+- [ ] Colonne: Titolo (troncato), Piattaforma (badge/icona), Tipo (badge), Status (badge colorato), Data
+- [ ] Filtri nella UI: search bar, select piattaforma, select tipo, select status
+- [ ] Paginazione nella UI (prev/next + indicatore)
+- **Componenti**: riusare pattern DataTable dallo Step 1.6 (admin users)
+- **Done when**: Lista contenuti paginata e filtrabile, responsive
+
+### Step 2.5 — Content Detail & Edit
+- [ ] `GET /api/projects/:id/content/:contentId` — dettaglio completo
+- [ ] `PATCH /api/projects/:id/content/:contentId` — modifica campi + cambio status
+- [ ] `DELETE /api/projects/:id/content/:contentId` — rimozione (hard delete)
+- [ ] Pagina `/projects/:id/content/:contentId` — vista dettaglio
+  - Header: titolo, piattaforma, tipo, status, URL (link esterno)
+  - Sezione contenuto: rawContent renderizzato (o messaggio "contenuto non ancora estratto")
+  - Sidebar: metadata (word count, lingua, data pubblicazione, data creazione, hash)
+  - Azioni: modifica (dialog), cambia status, elimina (conferma)
+- [ ] Breadcrumbs: Projects > Nome Progetto > Contenuti > Titolo Contenuto
+- **Done when**: Vista dettaglio completa, edit funzionante, delete con conferma
+
+### Step 2.6 — CSV Import
+- [ ] `POST /api/projects/:id/content/import` — upload e parsing CSV
+- [ ] Formato CSV atteso: `url,title,sourcePlatform,contentType,publishedAt` (con header)
+- [ ] Parsing con `papaparse` (npm) server-side
+- [ ] Validazione per riga: ogni riga validata con Zod, righe invalide skippate
+- [ ] Report import: `{ imported: N, skipped: N, errors: [{ row: N, error: "..." }] }`
+- [ ] Dedup: skip righe con hash già presente nel progetto
+- [ ] UI: bottone "Import CSV" nel progetto → dialog con file upload + area drag-and-drop
+- [ ] Preview delle prime 5 righe prima di confermare
+- [ ] Risultato import mostrato in dialog (successo/errori)
+- [ ] Template CSV scaricabile (link o generato)
+- **Done when**: Import CSV funzionante end-to-end, errori gestiti per riga, template disponibile
+
+### Step 2.7 — Content Management Actions
+- [ ] Azioni bulk: seleziona multipli → cambia status, elimina
+- [ ] Checkbox nella DataTable per selezione multipla
+- [ ] Toolbar azioni bulk: "Approve Selected", "Archive Selected", "Delete Selected"
+- [ ] `PATCH /api/projects/:id/content/bulk` — operazione su array di IDs
+- [ ] Conferma per azioni distruttive (delete)
+- [ ] Toast feedback per tutte le azioni
+- [ ] Contatori aggiornati in tempo reale nella project overview
+- **Done when**: Selezione multipla, azioni bulk, feedback utente, contatori sincronizzati
+
+### Step 2.8 — Phase 2a Polish
+- [ ] Loading skeletons per pagine progetti e contenuti
+- [ ] Empty states per: nessun progetto, nessun contenuto, nessun risultato filtri
+- [ ] Error boundaries per sezione progetti e contenuti
+- [ ] Audit log: log creazione/modifica/delete contenuti e progetti
+- [ ] Sidebar aggiornata: "Projects" ora mostra il conteggio o un indicatore
+- [ ] Review responsive su mobile di tutte le nuove pagine
+- [ ] Test manuale completo di tutti i flow
+- **Done when**: UX coerente con Fase 1, tutti gli stati edge gestiti, audit completo
+
+---
+
+## Piano Step Atomici — Fase 2b (Discovery Agent)
+
+> Prerequisito: Python 3.11+, pip installato sulla macchina di sviluppo
+
+### Step 2b.0 — Python FastAPI Scaffolding
+- [ ] Struttura `services/engine/` con FastAPI app
+- [ ] `Dockerfile` per il servizio Python
+- [ ] Aggiornare `docker-compose.yml`: aggiungere servizio `engine`
+- [ ] Health check endpoint: `GET /health`
+- [ ] Configurazione CORS per comunicazione con Next.js
+- [ ] Shared config: variabili d'ambiente (DATABASE_URL, REDIS_URL, etc.)
+- [ ] `requirements.txt` con dipendenze base (fastapi, uvicorn, httpx, beautifulsoup4, etc.)
+- [ ] ADR-008: Python service architecture
+- **Done when**: `docker compose up` avvia anche il servizio Python, `/health` risponde
+
+### Step 2b.1 — Web Crawler Agent
+- [ ] Endpoint `POST /api/crawl/site` — riceve URL sito, restituisce lista pagine trovate
+- [ ] Crawler con `httpx` + `BeautifulSoup`: segue link interni, max depth configurabile
+- [ ] Estrazione contenuto principale (rimozione nav, footer, sidebar) con heuristics
+- [ ] Estrazione metadata: title, description, og:tags, published_date
+- [ ] Rate limiting: max N requests/secondo per dominio
+- [ ] Timeout e error handling per pagine inaccessibili
+- [ ] Risultati salvati come `ContentItem` con status `DISCOVERED` e method `AGENT_CRAWL`
+- [ ] API Next.js: `POST /api/projects/:id/discovery/crawl` che chiama il servizio Python
+- **Done when**: Dato un URL sito, il crawler trova e salva le pagine con contenuto estratto
+
+### Step 2b.2 — Platform Search Agent
+- [ ] Integrazione Google Custom Search JSON API (o alternativa scelta)
+- [ ] Endpoint `POST /api/search/platform` — riceve nome/brand + piattaforme target
+- [ ] Query templates per piattaforma:
+  - Website: `site:domain.com`
+  - Substack: `site:substack.com "nome autore"`
+  - Medium: `site:medium.com "nome autore"`
+  - LinkedIn: `site:linkedin.com/pulse "nome autore"` (articoli)
+  - Reddit: `site:reddit.com "nome autore" OR "brand"`
+  - YouTube: `site:youtube.com "nome canale"`
+  - News: `"nome brand" -site:domain.com` (menzioni esterne)
+- [ ] Parsing risultati: URL, titolo, snippet
+- [ ] Salvataggio come `ContentItem` con status `DISCOVERED` e method `AGENT_SEARCH`
+- [ ] Dedup contro contenuti già esistenti nel progetto
+- [ ] API Next.js: `POST /api/projects/:id/discovery/search`
+- **Done when**: Ricerca su piattaforme funzionante, risultati salvati e deduplicati
+
+### Step 2b.3 — Content Fetching & Extraction
+- [ ] Per ogni `ContentItem` con URL ma senza `rawContent`: fetch e estrazione
+- [ ] Endpoint `POST /api/crawl/extract` — riceve URL, restituisce contenuto pulito
+- [ ] Cheerio/BeautifulSoup per siti statici, Puppeteer/Playwright per SPA
+- [ ] Heuristic per estrarre il contenuto principale (article body)
+- [ ] Calcolo wordCount, excerpt, contentHash dopo estrazione
+- [ ] Batch processing: processare N contenuti in parallelo
+- [ ] Update ContentItem con rawContent estratto
+- **Done when**: Contenuti scoperti hanno rawContent estratto e metadata calcolati
+
+### Step 2b.4 — Discovery Job Orchestration
+- [ ] BullMQ job queue per orchestrare discovery
+- [ ] Job types: `CRAWL_SITE`, `SEARCH_PLATFORM`, `FULL_DISCOVERY`
+- [ ] `FULL_DISCOVERY` = crawl sito + search su tutte le piattaforme
+- [ ] Tracking stato job in tabella `DiscoveryJob`
+- [ ] API Next.js:
+  - `POST /api/projects/:id/discovery/start` — avvia job
+  - `GET /api/projects/:id/discovery/status` — stato job corrente
+  - `GET /api/projects/:id/discovery/history` — storico job
+- [ ] Progress tracking: aggiornamento percentuale/conteggio durante l'esecuzione
+- **Done when**: Job avviabili, tracciabili, con stato persistente
+
+### Step 2b.5 — Discovery Review UI
+- [ ] Nel progetto, tab/sezione "Discovery" con:
+  - Bottone "Start Discovery" → dialog configurazione (cosa cercare)
+  - Stato job corrente (progress bar, conteggio trovati)
+  - Storico job passati
+- [ ] Lista risultati `DISCOVERED` (pending review):
+  - Card per ogni risultato: titolo, URL, piattaforma, snippet
+  - Azioni: Approve, Reject, Preview
+  - Bulk approve/reject
+- [ ] Preview contenuto: modal con contenuto estratto
+- [ ] Dopo approve/reject, il contenuto si sposta nella lista principale
+- **Done when**: Flow completo discovery → review → approve/reject funzionante
+
+### Step 2b.6 — Phase 2b Polish
+- [ ] Error handling robusto per crawler (timeout, 404, captcha, rate limit)
+- [ ] Retry logic per job falliti
+- [ ] UI feedback per stati di errore del discovery
+- [ ] Loading states durante il discovery
+- [ ] Audit log per discovery jobs
+- [ ] Test manuale di tutti i flow
+- **Done when**: Discovery agent robusto, errori gestiti gracefully, UX coerente
+
+---
+
+## Note Implementative
+
+### Ownership & Authorization Pattern
+Ogni API route che accede a un progetto deve verificare:
+1. L'utente è autenticato
+2. Il progetto appartiene all'utente (`project.userId === currentUser.id`)
+3. Per i content items: il content item appartiene al progetto dell'utente
+
+Creare helper riusabile:
+```typescript
+// lib/auth.ts
+async function assertProjectOwnership(projectId: string, userId: string): Promise<Project> {
+  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  if (!project || project.userId !== userId) throw new NotFoundError();
+  return project;
+}
+```
+
+### Content Hash Strategy
+```typescript
+import { createHash } from "crypto";
+
+function generateContentHash(url?: string, rawContent?: string): string {
+  const input = url || rawContent || "";
+  return createHash("sha256").update(input).digest("hex");
+}
+```
+
+### CSV Format Template
+```csv
+url,title,sourcePlatform,contentType,publishedAt
+https://example.com/post-1,My First Post,WEBSITE,ARTICLE,2024-01-15
+https://medium.com/@me/post,Medium Article,MEDIUM,BLOG_POST,2024-02-20
+,Manual Note,OTHER,OTHER,
+```
+Regole: `url` opzionale, `title` e `sourcePlatform` obbligatori, `contentType` default `ARTICLE` se omesso.
+
+---
+
+## Piano di Sviluppo — Fasi Successive (Overview)
 
 ### Fase 3 — Knowledge Graph & Analysis
 - Step 3.0: Schema graph (nodi, edges, entità) in PostgreSQL
