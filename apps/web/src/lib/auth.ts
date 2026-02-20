@@ -87,3 +87,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     error: "/login",
   },
 });
+
+/**
+ * Returns the current user from the session.
+ * Use this in Server Components and API Route Handlers.
+ * Returns null if not authenticated.
+ */
+export async function getCurrentUser() {
+  const session = await auth();
+  if (!session?.user) return null;
+  return session.user;
+}

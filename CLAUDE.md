@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 1 — Foundation
-**Step corrente**: 4 (Step 1.3 completato)
-**Ultimo commit**: feat(auth): step 1.3 — login/register UI, UserButton, SessionProvider
+**Step corrente**: 5 (Step 1.4 completato)
+**Ultimo commit**: feat(auth): step 1.4 — proxy.ts route protection, getCurrentUser helper
 **Data ultimo aggiornamento**: 2026-02-20
 
 ---
@@ -197,13 +197,16 @@ ai-visibility-platform/
 - **Note**: Redirect a `/projects` (non `/dashboard`) per evitare conflitto route group `(dashboard)/page.tsx`
 - **Done when**: Flow completo login/register/logout funzionante via UI ✅
 
-### Step 1.4 — Middleware & Route Protection
-- [ ] Middleware Next.js per protezione route
-- [ ] Route `/admin/*` accessibili solo a `role: 'admin'`
-- [ ] Route `/(dashboard)/*` accessibili solo a utenti autenticati
-- [ ] Route `/(auth)/*` redirect a dashboard se già loggati
-- [ ] Helper `getCurrentUser()` per API routes
-- **Done when**: Utente non autenticato viene rediretto, admin routes protette, helper funzionante
+### Step 1.4 — Middleware & Route Protection ✅
+- [x] `src/proxy.ts` (Next.js 16 — rinominato da middleware.ts)
+- [x] Route `/projects`, `/content`, `/graph`, `/settings` → redirect `/login?callbackUrl=` se non autenticato
+- [x] Route `/admin/*` → redirect `/login` se non autenticato, redirect `/projects` se non admin
+- [x] Route `/login`, `/register` → redirect `/projects` se già loggato
+- [x] `getCurrentUser()` in `lib/auth.ts` — chiama `auth()` per Server Components e API routes
+- [x] Pagine placeholder `/projects` e `/admin` create
+- **Note Next.js 16**: file si chiama `proxy.ts`, funzione `proxy`, export default — stessa API di middleware
+- **Note**: `auth(handler)` di NextAuth v5 inietta `req.auth` (sessione) — usare come wrapper del proxy
+- **Done when**: Build mostra `ƒ Proxy (Middleware)`, redirect funzionanti ✅
 
 ### Step 1.5 — Dashboard Layout Shell
 - [ ] Layout dashboard con sidebar navigazione
