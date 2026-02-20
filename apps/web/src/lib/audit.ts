@@ -13,6 +13,8 @@ export const AUDIT_ACTIONS = {
   PROJECT_ARCHIVED: "project.archived",
   // Content
   CONTENT_CREATED: "content.created",
+  CONTENT_UPDATED: "content.updated",
+  CONTENT_DELETED: "content.deleted",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

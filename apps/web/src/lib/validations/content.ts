@@ -20,6 +20,19 @@ export const CreateContentSchema = z.object({
 
 export type CreateContentData = z.infer<typeof CreateContentSchema>;
 
+// ─── Update schema for PATCH /api/projects/:id/content/:contentId ─────────────
+
+export const UpdateContentSchema = CreateContentSchema.partial().extend({
+  status: z.nativeEnum(ContentStatus).optional(),
+});
+
+export type UpdateContentData = z.infer<typeof UpdateContentSchema>;
+
+// ─── Edit form schema (no status — changed separately) ────────────────────────
+
+export const EditContentFormSchema = CreateContentSchema.partial();
+export type EditContentFormData = z.infer<typeof EditContentFormSchema>;
+
 // ─── Query schema for GET /api/projects/:id/content ──────────────────────────
 
 export const ContentQuerySchema = z.object({

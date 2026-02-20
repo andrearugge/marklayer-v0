@@ -8,7 +8,7 @@ import { NAV_ITEMS } from "./nav-items";
 const SEGMENT_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
   projects: "Projects",
-  content: "Content",
+  content: "Contenuti",
   graph: "Graph",
   settings: "Settings",
   admin: "Admin",

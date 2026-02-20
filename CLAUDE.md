@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2.3 completato
-**Ultimo commit**: feat(content): step 2.3 — Content Add (singolo manuale)
+**Step corrente**: 2.4 completato
+**Ultimo commit**: feat(content): step 2.4 — Content List & Filters
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -617,17 +617,17 @@ const updateContentSchema = createContentSchema.partial().extend({
 - **Note**: Zod v4 — `nativeEnum` non accetta `required_error`, rimosso
 - **Done when**: Build OK (24 route), utente può aggiungere contenuti, dedup funziona ✅
 
-### Step 2.4 — Content List & Filters
-- [ ] `GET /api/projects/:id/content` con paginazione e filtri
-- [ ] Filtri: `status`, `sourcePlatform`, `contentType`, ricerca testuale su titolo
-- [ ] Ordinamento: per data creazione, data pubblicazione, titolo
-- [ ] Paginazione offset-based (page + limit)
-- [ ] Nella pagina `/projects/:id`, sezione contenuti con DataTable
-- [ ] Colonne: Titolo (troncato), Piattaforma (badge/icona), Tipo (badge), Status (badge colorato), Data
-- [ ] Filtri nella UI: search bar, select piattaforma, select tipo, select status
-- [ ] Paginazione nella UI (prev/next + indicatore)
-- **Componenti**: riusare pattern DataTable dallo Step 1.6 (admin users)
-- **Done when**: Lista contenuti paginata e filtrabile, responsive
+### Step 2.4 — Content List & Filters ✅
+- [x] `GET /api/projects/:id/content` con paginazione e filtri (status, sourcePlatform, contentType, search, sortBy, sortOrder)
+- [x] ContentQuerySchema con `.catch(undefined)` su enum opzionali (Zod v4)
+- [x] Paginazione offset-based (page + limit=20)
+- [x] Sezione contenuti nella pagina `/projects/:id` con tabella server-rendered
+- [x] Colonne: Titolo (link + icona URL esterno), Piattaforma (badge), Tipo, Status (badge colorato), Data
+- [x] `content-filters.tsx`: search + select piattaforma/tipo/status (URL search params)
+- [x] `content-pagination.tsx`: prev/next con indicatore pagina/totale
+- [x] 6 query Prisma in parallelo (4 stats + lista filtrata + count filtrato)
+- [x] Empty state distinto: "nessun contenuto nel progetto" vs "nessun risultato per questi filtri"
+- **Done when**: Build OK (24 route), lista filtrabile e paginabile, stats sempre non filtrate ✅
 
 ### Step 2.5 — Content Detail & Edit
 - [ ] `GET /api/projects/:id/content/:contentId` — dettaglio completo
