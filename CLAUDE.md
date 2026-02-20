@@ -5,9 +5,9 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 1 — Foundation
-**Step corrente**: 1 (Step 1.0 completato)
-**Ultimo commit**: feat(config): step 1.0 — project scaffolding
-**Data ultimo aggiornamento**: 2026-02-18
+**Step corrente**: 2 (Step 1.1 completato)
+**Ultimo commit**: feat(db): step 1.1 — docker compose, prisma schema, migration, seed
+**Data ultimo aggiornamento**: 2026-02-20
 
 ---
 
@@ -158,14 +158,17 @@ ai-visibility-platform/
 - **Note**: root `package.json` con npm workspaces — `npm run dev` dalla root delega a `apps/web`
 - **Done when**: `npm run dev` funziona, pagina base visibile, shadcn Button renderizza ✅
 
-### Step 1.1 — Docker Compose & Database
-- [ ] `docker-compose.yml` con PostgreSQL 16 e Redis
-- [ ] Configurazione Prisma con datasource PostgreSQL
-- [ ] Schema Prisma iniziale: modello `User` base
-- [ ] Prima migration (`init`)
-- [ ] Script seed con admin user di test
-- [ ] Prisma client singleton in `lib/prisma.ts`
-- **Done when**: `docker compose up`, `npx prisma migrate dev`, seed funziona, query test OK
+### Step 1.1 — Docker Compose & Database ✅
+- [x] `docker-compose.yml` con PostgreSQL 16 (pgvector/pgvector:pg16) e Redis 7
+- [x] Configurazione Prisma 7 con `prisma.config.ts` (datasource.url + PrismaPg adapter)
+- [x] Schema Prisma iniziale: modello `User` con role/status enum, UUID PK, timestamps
+- [x] Prima migration (`init`) applicata con successo
+- [x] Script seed con admin user (`admin@example.com`, role: admin)
+- [x] Prisma client singleton in `lib/prisma.ts` con PrismaPg adapter
+- **Note Prisma 7**: `url` rimosso da `schema.prisma` → `prisma.config.ts` con `datasource.url`
+- **Note Prisma 7**: adapter esportato come `PrismaPg` (non `PrismaPostgres`)
+- **Note Prisma 7**: seed e client richiedono entrambi il driver adapter esplicito
+- **Done when**: `docker compose up`, `npx prisma migrate dev`, seed funziona, query test OK ✅
 
 ### Step 1.2 — Authentication Setup
 - [ ] Installazione e configurazione NextAuth.js v5
