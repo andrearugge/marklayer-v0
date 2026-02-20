@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { NAV_ITEMS } from "./nav-items";
 
-export function Sidebar() {
+export function Sidebar({ projectCount }: { projectCount?: number }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "admin";
@@ -29,6 +29,10 @@ export function Sidebar() {
           {NAV_ITEMS.map((item) => {
             const isActive =
               pathname === item.href || pathname.startsWith(item.href + "/");
+            const showCount =
+              item.href === "/projects" &&
+              typeof projectCount === "number" &&
+              projectCount > 0;
             return (
               <Link
                 key={item.href}
@@ -42,6 +46,11 @@ export function Sidebar() {
               >
                 <item.icon className="h-4 w-4 shrink-0" />
                 {item.label}
+                {showCount && (
+                  <span className="ml-auto text-xs tabular-nums">
+                    {projectCount}
+                  </span>
+                )}
               </Link>
             );
           })}

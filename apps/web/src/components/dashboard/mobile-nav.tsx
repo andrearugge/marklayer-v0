@@ -15,7 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "./nav-items";
 
-export function MobileNav() {
+export function MobileNav({ projectCount }: { projectCount?: number }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -44,6 +44,10 @@ export function MobileNav() {
           {NAV_ITEMS.map((item) => {
             const isActive =
               pathname === item.href || pathname.startsWith(item.href + "/");
+            const showCount =
+              item.href === "/projects" &&
+              typeof projectCount === "number" &&
+              projectCount > 0;
             return (
               <Link
                 key={item.href}
@@ -58,6 +62,11 @@ export function MobileNav() {
               >
                 <item.icon className="h-4 w-4 shrink-0" />
                 {item.label}
+                {showCount && (
+                  <span className="ml-auto text-xs tabular-nums">
+                    {projectCount}
+                  </span>
+                )}
               </Link>
             );
           })}
