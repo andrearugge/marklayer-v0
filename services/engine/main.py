@@ -1,0 +1,33 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from api.health import router as health_router
+from config import settings
+
+app = FastAPI(
+    title="Marklayer Engine",
+    description="AI Visibility Platform — Content Discovery & Analysis Service",
+    version="0.1.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+# ─── CORS ─────────────────────────────────────────────────────────────────────
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ─── Routers ──────────────────────────────────────────────────────────────────
+
+app.include_router(health_router)
+
+# Future routers (Fase 2b+):
+# from api.crawl import router as crawl_router
+# from api.search import router as search_router
+# app.include_router(crawl_router, prefix="/api/crawl")
+# app.include_router(search_router, prefix="/api/search")

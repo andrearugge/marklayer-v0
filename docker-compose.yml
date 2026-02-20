@@ -31,6 +31,32 @@ services:
       timeout: 5s
       retries: 5
 
+  engine:
+    build:
+      context: ./services/engine
+      dockerfile: Dockerfile
+    container_name: marklayer_engine
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/ai_visibility_platform"
+      REDIS_URL: "redis://redis:6379"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ENGINE_API_KEY: ${ENGINE_API_KEY:-changeme-in-production}
+      ALLOWED_ORIGINS: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
 volumes:
   postgres_data:
   redis_data:
