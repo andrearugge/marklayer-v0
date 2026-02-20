@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2.8 completato — Fase 2a COMPLETATA
-**Ultimo commit**: feat(step-2.8): phase 2a polish — error boundary & sidebar project count
+**Step corrente**: 2b.0 completato
+**Ultimo commit**: feat(step-2b.0): Python FastAPI engine service scaffolding
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -690,16 +690,20 @@ const updateContentSchema = createContentSchema.partial().extend({
 
 > Prerequisito: Python 3.11+, pip installato sulla macchina di sviluppo
 
-### Step 2b.0 — Python FastAPI Scaffolding
-- [ ] Struttura `services/engine/` con FastAPI app
-- [ ] `Dockerfile` per il servizio Python
-- [ ] Aggiornare `docker-compose.yml`: aggiungere servizio `engine`
-- [ ] Health check endpoint: `GET /health`
-- [ ] Configurazione CORS per comunicazione con Next.js
-- [ ] Shared config: variabili d'ambiente (DATABASE_URL, REDIS_URL, etc.)
-- [ ] `requirements.txt` con dipendenze base (fastapi, uvicorn, httpx, beautifulsoup4, etc.)
-- [ ] ADR-008: Python service architecture
-- **Done when**: `docker compose up` avvia anche il servizio Python, `/health` risponde
+### Step 2b.0 — Python FastAPI Scaffolding ✅
+- [x] Struttura `services/engine/` con FastAPI app (main.py, config.py)
+- [x] Package structure: api/, agents/, embeddings/, graph/, workers/ con __init__.py
+- [x] `Dockerfile` (python:3.11-slim + curl, cached pip layer)
+- [x] `.dockerignore` per escludere __pycache__, .venv, .env
+- [x] Aggiornato `docker-compose.yml`: servizio `engine` porta 8000, depends_on postgres+redis, healthcheck
+- [x] Health check endpoint: `GET /health` → { status, service, version, uptime_seconds }
+- [x] CORS middleware con `ALLOWED_ORIGINS` env var (default localhost:3000)
+- [x] `config.py` con pydantic-settings: DATABASE_URL, REDIS_URL, ANTHROPIC_API_KEY, ENGINE_API_KEY, ALLOWED_ORIGINS
+- [x] `requirements.txt`: fastapi, uvicorn, pydantic-settings, httpx, beautifulsoup4, lxml, asyncpg, sqlalchemy, redis, anthropic
+- [x] `.env.example` aggiornato: ENGINE_API_KEY, ENGINE_URL
+- [x] ADR-008: docs/adr/008-python-engine-service.md
+- **Done when**: `docker compose up` avvia anche il servizio Python, `/health` risponde ✅
+- **Note**: in dev, Next.js gira su host (porta 3000), engine in Docker (porta 8000 esposta). ENGINE_URL=http://localhost:8000
 
 ### Step 2b.1 — Web Crawler Agent
 - [ ] Endpoint `POST /api/crawl/site` — riceve URL sito, restituisce lista pagine trovate
