@@ -6,6 +6,8 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─── Auth enums ───────────────────────────────────────────────────────────────
+
 enum UserRole {
   user
   admin
@@ -15,6 +17,8 @@ enum UserStatus {
   active
   suspended
 }
+
+// ─── Auth models ──────────────────────────────────────────────────────────────
 
 model User {
   id            String     @id @default(uuid())
@@ -30,6 +34,7 @@ model User {
 
   accounts Account[]
   sessions Session[]
+  projects Project[]
 
   @@map("users")
 }
@@ -90,4 +95,136 @@ model AuditLog {
   @@index([targetId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ─── Project enums ────────────────────────────────────────────────────────────
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+// ─── Content enums ────────────────────────────────────────────────────────────
+
+enum SourcePlatform {
+  WEBSITE
+  SUBSTACK
+  MEDIUM
+  LINKEDIN
+  REDDIT
+  QUORA
+  YOUTUBE
+  TWITTER
+  NEWS
+  OTHER
+}
+
+enum ContentType {
+  ARTICLE
+  BLOG_POST
+  PAGE
+  SOCIAL_POST
+  COMMENT
+  MENTION
+  VIDEO
+  PODCAST
+  OTHER
+}
+
+enum DiscoveryMethod {
+  MANUAL
+  CSV_IMPORT
+  AGENT_CRAWL
+  AGENT_SEARCH
+}
+
+enum ContentStatus {
+  DISCOVERED
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+// ─── Discovery Job enums ──────────────────────────────────────────────────────
+
+enum DiscoveryJobType {
+  CRAWL_SITE
+  SEARCH_PLATFORM
+  SEARCH_MENTIONS
+  FULL_DISCOVERY
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// ─── Phase 2 models ───────────────────────────────────────────────────────────
+
+model Project {
+  id          String        @id @default(uuid())
+  userId      String        @map("user_id")
+  name        String        @db.VarChar(255)
+  description String?       @db.Text
+  domain      String?       @db.VarChar(255)
+  status      ProjectStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentItems  ContentItem[]
+  discoveryJobs DiscoveryJob[]
+
+  @@index([userId])
+  @@map("projects")
+}
+
+model ContentItem {
+  id              String          @id @default(uuid())
+  projectId       String          @map("project_id")
+  url             String?         @db.Text
+  sourcePlatform  SourcePlatform
+  contentType     ContentType
+  title           String          @db.VarChar(500)
+  rawContent      String?         @db.Text
+  excerpt         String?         @db.VarChar(1000)
+  contentHash     String?         @map("content_hash") @db.VarChar(64)
+  discoveryMethod DiscoveryMethod
+  status          ContentStatus   @default(DISCOVERED)
+  wordCount       Int?            @map("word_count")
+  language        String?         @db.VarChar(10)
+  publishedAt     DateTime?       @map("published_at")
+  lastCrawledAt   DateTime?       @map("last_crawled_at")
+  metadata        Json?           @db.JsonB
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, contentHash])
+  @@index([projectId, sourcePlatform])
+  @@index([projectId, status])
+  @@index([projectId, contentType])
+  @@map("content_items")
+}
+
+model DiscoveryJob {
+  id            String           @id @default(uuid())
+  projectId     String           @map("project_id")
+  jobType       DiscoveryJobType
+  status        JobStatus        @default(PENDING)
+  config        Json?            @db.JsonB
+  resultSummary Json?            @map("result_summary") @db.JsonB
+  startedAt     DateTime?        @map("started_at")
+  completedAt   DateTime?        @map("completed_at")
+  errorMessage  String?          @map("error_message") @db.Text
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
+  @@map("discovery_jobs")
 }

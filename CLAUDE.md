@@ -4,9 +4,9 @@
 
 ## Stato Corrente del Progetto
 
-**Fase**: 1 — Foundation
-**Step corrente**: 1.9 completato — Fase 1 DONE ✅
-**Ultimo commit**: feat(polish): step 1.9 — error boundaries, loading skeletons, toast, 404/error pages
+**Fase**: 2 — Content Discovery
+**Step corrente**: 2.0 completato
+**Ultimo commit**: feat(db): step 2.0 — Project/ContentItem/DiscoveryJob models, migration, seed
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -570,16 +570,15 @@ const updateContentSchema = createContentSchema.partial().extend({
 
 ## Piano Step Atomici — Fase 2a (CRUD Manuale)
 
-### Step 2.0 — Database Models & Migration
-- [ ] Aggiungere modelli `Project`, `ContentItem` allo schema Prisma
-- [ ] Aggiungere enum `ProjectStatus`, `SourcePlatform`, `ContentType`, `DiscoveryMethod`, `ContentStatus`
-- [ ] Aggiungere relazione `User.projects`
-- [ ] Modello `DiscoveryJob` con enum (solo schema, usato nella Fase 2b)
-- [ ] Creare migration `add-projects-and-content`
-- [ ] Aggiornare seed: creare un progetto di test con 3-4 content items di esempio
-- [ ] Verificare con Prisma Studio che i modelli e relazioni siano corretti
-- **File coinvolti**: `prisma/schema.prisma`, `prisma/seed.ts`
-- **Done when**: Migration applicata, seed funziona, modelli visibili in Prisma Studio
+### Step 2.0 — Database Models & Migration ✅
+- [x] Modelli `Project`, `ContentItem`, `DiscoveryJob` aggiunti allo schema Prisma
+- [x] Enum: `ProjectStatus`, `SourcePlatform`, `ContentType`, `DiscoveryMethod`, `ContentStatus`, `DiscoveryJobType`, `JobStatus`
+- [x] Relazione `User.projects` aggiunta
+- [x] Migration `add-projects-and-content` applicata
+- [x] Seed aggiornato: progetto "My Brand (Demo)" + 4 content items (WEBSITE/SUBSTACK/MEDIUM/LINKEDIN)
+- **Note**: `@db.Uuid` rimosso da tutti i campi UUID per coerenza con schema esistente (`User.id` è `String` plain). Tenuti `@db.VarChar`, `@db.Text`, `@db.JsonB`.
+- **Note**: `prisma generate` necessario dopo migrate prima di eseguire il seed
+- **Done when**: Migration applicata, seed funziona (4 content items creati) ✅
 
 ### Step 2.1 — Projects CRUD API
 - [ ] `POST /api/projects` — crea progetto (associato all'utente autenticato)
