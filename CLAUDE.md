@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 1 — Foundation
-**Step corrente**: 3 (Step 1.2 completato)
-**Ultimo commit**: feat(auth): step 1.2 — nextauth v5, google oauth, credentials, prisma adapter
+**Step corrente**: 4 (Step 1.3 completato)
+**Ultimo commit**: feat(auth): step 1.3 — login/register UI, UserButton, SessionProvider
 **Data ultimo aggiornamento**: 2026-02-20
 
 ---
@@ -184,14 +184,18 @@ ai-visibility-platform/
 - **Note NextAuth v5**: augmentare solo `Session` e `JWT`, non `User` (evita conflitto AdapterUser)
 - **Done when**: build OK, `/api/auth/[...nextauth]` riconosciuta come route dinamica ✅
 
-### Step 1.3 — Auth UI Pages
-- [ ] Layout per route group `(auth)`
-- [ ] Pagina `/login` con form email/password + bottone Google
-- [ ] Pagina `/register` con form registrazione
-- [ ] Redirect post-login alla dashboard
-- [ ] Gestione errori auth (credenziali invalide, account esistente)
-- [ ] Componente `UserButton` (avatar, dropdown con logout)
-- **Done when**: Flow completo login/register/logout funzionante via UI
+### Step 1.3 — Auth UI Pages ✅
+- [x] Layout per route group `(auth)` — centrato, max-w-sm
+- [x] Pagina `/login` con form email/password + bottone Google OAuth
+- [x] Pagina `/register` con form (nome, email, password, conferma)
+- [x] Redirect post-login/register a `/projects` (primo slug dashboard)
+- [x] Gestione errori: `CredentialsSignin`, `OAuthAccountNotLinked`, email già esistente
+- [x] Componente `UserButton` — Avatar + DropdownMenu (profilo, sign out)
+- [x] `SessionProvider` wrapper nel root layout
+- [x] API route `POST /api/auth/register` con Zod + bcrypt + upsert check
+- [x] Validazioni Zod in `lib/validations/auth.ts`
+- **Note**: Redirect a `/projects` (non `/dashboard`) per evitare conflitto route group `(dashboard)/page.tsx`
+- **Done when**: Flow completo login/register/logout funzionante via UI ✅
 
 ### Step 1.4 — Middleware & Route Protection
 - [ ] Middleware Next.js per protezione route
