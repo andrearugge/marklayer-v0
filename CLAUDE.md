@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 1 — Foundation
-**Step corrente**: 6 (Step 1.5 completato)
-**Ultimo commit**: feat(ui): step 1.5 — dashboard layout shell, sidebar, header, breadcrumbs
+**Step corrente**: 7 (Step 1.6 completato)
+**Ultimo commit**: feat(admin): step 1.6 — admin panel user management, DataTable, filters, actions
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -221,15 +221,20 @@ ai-visibility-platform/
 - **Note**: Sidebar usa `hidden lg:flex`; MobileNav usa `lg:hidden` con Sheet
 - **Done when**: Build OK (13 route), Proxy Middleware presente, TypeScript 0 errori ✅
 
-### Step 1.6 — Admin Panel: User Management
-- [ ] Layout admin separato
-- [ ] Pagina lista utenti con DataTable (shadcn)
-- [ ] Filtri: per ruolo, per status, ricerca per nome/email
-- [ ] Paginazione server-side
-- [ ] Azioni: cambia ruolo, cambia status (attiva/sospendi)
-- [ ] API routes: `GET /api/admin/users`, `PATCH /api/admin/users/:id`
-- [ ] Validazione con Zod
-- **Done when**: Admin può vedere lista utenti, filtrare, cambiare ruoli e status
+### Step 1.6 — Admin Panel: User Management ✅
+- [x] Layout admin separato (reusa Sidebar + Header del dashboard)
+- [x] Sidebar aggiornata: sezione "Admin" con link Users visibile solo ad admin
+- [x] Pagina `/admin/users` con DataTable (@tanstack/react-table + shadcn Table)
+- [x] Colonne: Utente (avatar+nome+email), Ruolo (badge), Status (badge), Registrato, Azioni
+- [x] Filtri: ricerca testuale (nome/email), select ruolo, select status — URL search params
+- [x] Paginazione server-side con prev/next e indicatore pagina/totale
+- [x] Azioni: promuovi/rimuovi admin, sospendi/riattiva (AlertDialog di conferma)
+- [x] API `GET /api/admin/users` con filtri, ricerca, paginazione
+- [x] API `PATCH /api/admin/users/:id` con blocco self-modify
+- [x] Validazione Zod in `lib/validations/admin.ts`
+- [x] shadcn: table, select, badge, dialog, alert-dialog installati
+- **Note**: Query Prisma diretta nel Server Component page (più efficiente che chiamare l'API)
+- **Done when**: Build OK (15 route), admin vede/filtra utenti, può cambiare ruoli e status ✅
 
 ### Step 1.7 — User Profile & Settings
 - [ ] Pagina `/settings/profile`

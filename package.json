@@ -16,5 +16,8 @@
     "db:seed": "npm run db:seed --workspace=apps/web",
     "db:generate": "npm run db:generate --workspace=apps/web",
     "db:studio": "npm run db:studio --workspace=apps/web"
+  },
+  "dependencies": {
+    "@tanstack/react-table": "^8.21.3"
   }
 }
