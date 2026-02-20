@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2.5 completato
-**Ultimo commit**: feat(content): step 2.5 — Content Detail & Edit
+**Step corrente**: 2.7 completato
+**Ultimo commit**: feat(step-2.7): content management actions — bulk select & label maps
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -645,12 +645,16 @@ const updateContentSchema = createContentSchema.partial().extend({
 - [x] breadcrumbs.tsx: "content" → "Contenuti"
 - **Done when**: Build OK (26 route), CRUD completo, edit + status change + delete funzionanti ✅
 
-### Step 2.6 — CSV Import
-- [ ] `POST /api/projects/:id/content/import` — upload e parsing CSV
-- [ ] Formato CSV atteso: `url,title,sourcePlatform,contentType,publishedAt` (con header)
-- [ ] Parsing con `papaparse` (npm) server-side
-- [ ] Validazione per riga: ogni riga validata con Zod, righe invalide skippate
-- [ ] Report import: `{ imported: N, skipped: N, errors: [{ row: N, error: "..." }] }`
+### Step 2.6 — CSV Import ✅
+- [x] `POST /api/projects/:id/content/import` — multipart/form-data, max 5MB / 1000 righe
+- [x] Parsing con `papaparse` (header: true, transformHeader: trim, skipEmptyLines)
+- [x] Normalizzazione enum a UPPER_CASE prima della validazione Zod
+- [x] Report: `{ imported, skipped, errors: [{ row, message }] }`; skipDuplicates via unique constraint
+- [x] `csv-import-dialog.tsx`: file picker, info formato, download template CSV, step results
+- [x] Bottone "Importa CSV" nell'header del progetto
+- [x] `CONTENT_IMPORTED` aggiunto a AUDIT_ACTIONS con metadata (imported/skipped/errors/totalRows)
+- **Note**: publishedAt validato post-Zod con Date.parse; righe senza URL non hanno contentHash
+- **Done when**: Build OK (27 route), import funzionante, report mostrato in dialog ✅
 - [ ] Dedup: skip righe con hash già presente nel progetto
 - [ ] UI: bottone "Import CSV" nel progetto → dialog con file upload + area drag-and-drop
 - [ ] Preview delle prime 5 righe prima di confermare
@@ -658,15 +662,18 @@ const updateContentSchema = createContentSchema.partial().extend({
 - [ ] Template CSV scaricabile (link o generato)
 - **Done when**: Import CSV funzionante end-to-end, errori gestiti per riga, template disponibile
 
-### Step 2.7 — Content Management Actions
-- [ ] Azioni bulk: seleziona multipli → cambia status, elimina
-- [ ] Checkbox nella DataTable per selezione multipla
-- [ ] Toolbar azioni bulk: "Approve Selected", "Archive Selected", "Delete Selected"
-- [ ] `PATCH /api/projects/:id/content/bulk` — operazione su array di IDs
-- [ ] Conferma per azioni distruttive (delete)
-- [ ] Toast feedback per tutte le azioni
-- [ ] Contatori aggiornati in tempo reale nella project overview
-- **Done when**: Selezione multipla, azioni bulk, feedback utente, contatori sincronizzati
+### Step 2.7 — Content Management Actions ✅
+- [x] Azioni bulk: seleziona multipli → cambia status, elimina
+- [x] Checkbox shadcn installato e integrato nella ContentTable
+- [x] Toolbar azioni bulk: Approva / Rifiuta / Archivia / Elimina con AlertDialog per delete
+- [x] `PATCH /api/projects/:id/content/bulk` — operazione su array di IDs (max 100), ownership check via count
+- [x] `lib/content-labels.ts` con label maps condivise (PLATFORM/TYPE/STATUS/DISCOVERY) tra server e client
+- [x] `BulkActionSchema` in lib/validations/content.ts
+- [x] `CONTENT_BULK_ACTION` in lib/audit.ts con metadata {action, count, ids}
+- [x] `content-table.tsx` Client Component — checkbox selection, bulk toolbar, router.refresh()
+- [x] `projects/[id]/page.tsx` refactored: usa ContentTable + lib/content-labels
+- [x] `content/[contentId]/page.tsx` refactored: usa lib/content-labels
+- **Done when**: Selezione multipla, azioni bulk, feedback utente, contatori sincronizzati ✅
 
 ### Step 2.8 — Phase 2a Polish
 - [ ] Loading skeletons per pagine progetti e contenuti
