@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2b.0 completato
-**Ultimo commit**: feat(step-2b.0): Python FastAPI engine service scaffolding
+**Step corrente**: 2b.1 completato
+**Ultimo commit**: feat(step-2b.1): web crawler agent — httpx + BeautifulSoup + Next.js proxy
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -705,14 +705,21 @@ const updateContentSchema = createContentSchema.partial().extend({
 - **Done when**: `docker compose up` avvia anche il servizio Python, `/health` risponde ✅
 - **Note**: in dev, Next.js gira su host (porta 3000), engine in Docker (porta 8000 esposta). ENGINE_URL=http://localhost:8000
 
-### Step 2b.1 — Web Crawler Agent
-- [ ] Endpoint `POST /api/crawl/site` — riceve URL sito, restituisce lista pagine trovate
-- [ ] Crawler con `httpx` + `BeautifulSoup`: segue link interni, max depth configurabile
-- [ ] Estrazione contenuto principale (rimozione nav, footer, sidebar) con heuristics
-- [ ] Estrazione metadata: title, description, og:tags, published_date
-- [ ] Rate limiting: max N requests/secondo per dominio
-- [ ] Timeout e error handling per pagine inaccessibili
-- [ ] Risultati salvati come `ContentItem` con status `DISCOVERED` e method `AGENT_CRAWL`
+### Step 2b.1 — Web Crawler Agent ✅
+- [x] `agents/crawler.py`: async BFS CrawlerAgent — httpx.AsyncClient, follow_redirects, per-page timeout
+- [x] Rate limiting: asyncio.sleep basato su interval = 1/rate_limit (configurabile 0.1–10 req/s)
+- [x] Max depth (1–5) e max pages (1–200) clampati lato engine
+- [x] Estrazione contenuto: noise tag removal + pattern class/id matching; main > article > body fallback
+- [x] Metadata: og:title, og:description, article:published_time, twitter:*, `<time datetime>` fallbacks
+- [x] Cap 100k caratteri per raw_content; word_count pre-truncation
+- [x] `api/deps.py`: dipendenza FastAPI `verify_api_key` (header `x-engine-api-key`)
+- [x] `api/crawl.py`: `POST /api/crawl/site` con Pydantic CrawlSiteRequest/Response
+- [x] `CONTENT_DISCOVERED` aggiunto a AUDIT_ACTIONS
+- [x] `POST /api/projects/:id/discovery/crawl`: chiama engine, salva ContentItem con status=DISCOVERED, AGENT_CRAWL, skipDuplicates
+- [x] detectPlatform() da hostname; detectContentType() da path URL
+- [x] AbortSignal.timeout(5min) per crawl di siti lenti
+- **Done when**: Dato un URL sito, il crawler trova e salva le pagine con contenuto estratto ✅
+- **Note**: aggiungere `ENGINE_URL=http://localhost:8000` e `ENGINE_API_KEY=...` al .env.local prima di usare
 - [ ] API Next.js: `POST /api/projects/:id/discovery/crawl` che chiama il servizio Python
 - **Done when**: Dato un URL sito, il crawler trova e salva le pagine con contenuto estratto
 
