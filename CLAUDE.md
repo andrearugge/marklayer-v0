@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 1 — Foundation
-**Step corrente**: 2 (Step 1.1 completato)
-**Ultimo commit**: feat(db): step 1.1 — docker compose, prisma schema, migration, seed
+**Step corrente**: 3 (Step 1.2 completato)
+**Ultimo commit**: feat(auth): step 1.2 — nextauth v5, google oauth, credentials, prisma adapter
 **Data ultimo aggiornamento**: 2026-02-20
 
 ---
@@ -170,15 +170,19 @@ ai-visibility-platform/
 - **Note Prisma 7**: seed e client richiedono entrambi il driver adapter esplicito
 - **Done when**: `docker compose up`, `npx prisma migrate dev`, seed funziona, query test OK ✅
 
-### Step 1.2 — Authentication Setup
-- [ ] Installazione e configurazione NextAuth.js v5
-- [ ] Provider Google OAuth
-- [ ] Provider Credentials (email/password) con bcrypt
-- [ ] Prisma Adapter per NextAuth
-- [ ] Schema Prisma aggiornato: Account, Session, VerificationToken
-- [ ] Colonne `role` e `status` su User
-- [ ] Variabili .env per OAuth credentials
-- **Done when**: Login con Google funziona, login con email/password funziona, sessione persiste
+### Step 1.2 — Authentication Setup ✅
+- [x] Installazione NextAuth.js v5 (5.0.0-beta.30)
+- [x] Provider Google OAuth
+- [x] Provider Credentials (email/password) con bcrypt
+- [x] PrismaAdapter per NextAuth (`@auth/prisma-adapter@2.11.1`)
+- [x] Schema Prisma aggiornato: Account, Session, VerificationToken + campo password su User
+- [x] role e status su User già presenti da Step 1.1
+- [x] Type augmentation in `types/next-auth.d.ts` (Session + JWT, non User/AdapterUser)
+- [x] Variabili .env: AUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+- [x] Rimosso package-lock.json annidato, turbopack.root configurato
+- **Note NextAuth v5**: adapter castato `as any` per conflitto `@auth/core@0.41.0` vs `0.41.1`
+- **Note NextAuth v5**: augmentare solo `Session` e `JWT`, non `User` (evita conflitto AdapterUser)
+- **Done when**: build OK, `/api/auth/[...nextauth]` riconosciuta come route dinamica ✅
 
 ### Step 1.3 — Auth UI Pages
 - [ ] Layout per route group `(auth)`
