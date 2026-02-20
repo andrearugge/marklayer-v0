@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2.0 completato
-**Ultimo commit**: feat(db): step 2.0 — Project/ContentItem/DiscoveryJob models, migration, seed
+**Step corrente**: 2.1 completato
+**Ultimo commit**: feat(api): step 2.1 — Projects CRUD API, ownership helper, audit log
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -580,17 +580,16 @@ const updateContentSchema = createContentSchema.partial().extend({
 - **Note**: `prisma generate` necessario dopo migrate prima di eseguire il seed
 - **Done when**: Migration applicata, seed funziona (4 content items creati) ✅
 
-### Step 2.1 — Projects CRUD API
-- [ ] `POST /api/projects` — crea progetto (associato all'utente autenticato)
-- [ ] `GET /api/projects` — lista progetti dell'utente corrente (con `_count.contentItems`)
-- [ ] `GET /api/projects/:id` — dettaglio con stats (conteggi per platform, type, status)
-- [ ] `PATCH /api/projects/:id` — aggiorna nome, description, domain
-- [ ] `DELETE /api/projects/:id` — archive (set status ARCHIVED, non delete)
-- [ ] Validazioni Zod in `lib/validations/project.ts`
-- [ ] Middleware/helper per verificare ownership del progetto (`assertProjectOwnership`)
-- [ ] Audit log per create/update/archive progetto
-- **File coinvolti**: `app/api/projects/route.ts`, `app/api/projects/[id]/route.ts`, `lib/validations/project.ts`
-- **Done when**: Tutti gli endpoint testabili via curl/Postman, ownership verificata, audit logged
+### Step 2.1 — Projects CRUD API ✅
+- [x] `POST /api/projects` — crea progetto per l'utente autenticato → 201
+- [x] `GET /api/projects` — lista progetti utente con `_count.contentItems`, ordinati per data desc
+- [x] `GET /api/projects/:id` — dettaglio con stats `{ byPlatform, byType, byStatus }` via `groupBy`
+- [x] `PATCH /api/projects/:id` — aggiorna name/description/domain (partial update)
+- [x] `DELETE /api/projects/:id` — soft delete: set status ARCHIVED (blocca se già ARCHIVED)
+- [x] Zod in `lib/validations/project.ts`: `CreateProjectSchema`, `UpdateProjectSchema` (partial)
+- [x] `lib/projects.ts`: `assertProjectOwnership()` — ritorna null se non esiste o non è owner (→ 404)
+- [x] Audit log: `project.created`, `project.updated`, `project.archived` con metadata
+- **Done when**: Build OK (21 route), endpoints presenti, ownership e audit verificati ✅
 
 ### Step 2.2 — Projects UI
 - [ ] Pagina `/projects` — lista progetti come cards (nome, dominio, conteggio contenuti, data creazione)
