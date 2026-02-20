@@ -155,6 +155,7 @@ ai-visibility-platform/
 - [x] `.gitignore` completo
 - [x] ADR docs creati (001–004)
 - **Note**: Next.js 16 depreca `middleware.ts` a favore di `proxy.ts` — aggiornare in Step 1.4
+- **Note**: root `package.json` con npm workspaces — `npm run dev` dalla root delega a `apps/web`
 - **Done when**: `npm run dev` funziona, pagina base visibile, shadcn Button renderizza ✅
 
 ### Step 1.1 — Docker Compose & Database
