@@ -1,0 +1,11 @@
+// Prisma Schema — initial setup in Step 1.1
+// This file will be populated in Step 1.1
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

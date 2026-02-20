@@ -5,9 +5,9 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 1 — Foundation
-**Step corrente**: 0 (non ancora iniziato)
-**Ultimo commit**: N/A
-**Data ultimo aggiornamento**: N/A
+**Step corrente**: 1 (Step 1.0 completato)
+**Ultimo commit**: feat(config): step 1.0 — project scaffolding
+**Data ultimo aggiornamento**: 2026-02-18
 
 ---
 
@@ -145,15 +145,17 @@ ai-visibility-platform/
 
 ## Piano di Sviluppo — Fase 1: Foundation
 
-### Step 1.0 — Project Scaffolding
-- [ ] Init repo git
-- [ ] Setup Next.js con App Router e TypeScript
-- [ ] Configurazione Tailwind CSS
-- [ ] Init shadcn/ui
-- [ ] Struttura cartelle come da schema sopra
-- [ ] `.env.example` con variabili placeholder
-- [ ] `.gitignore` completo
-- **Done when**: `npm run dev` funziona, pagina base visibile, shadcn Button renderizza
+### Step 1.0 — Project Scaffolding ✅
+- [x] Init repo git
+- [x] Setup Next.js 16 con App Router e TypeScript (strict mode)
+- [x] Configurazione Tailwind CSS v4
+- [x] Init shadcn/ui (Button component aggiunto)
+- [x] Struttura cartelle come da schema sopra (con src/ directory)
+- [x] `.env.example` con variabili placeholder
+- [x] `.gitignore` completo
+- [x] ADR docs creati (001–004)
+- **Note**: Next.js 16 depreca `middleware.ts` a favore di `proxy.ts` — aggiornare in Step 1.4
+- **Done when**: `npm run dev` funziona, pagina base visibile, shadcn Button renderizza ✅
 
 ### Step 1.1 — Docker Compose & Database
 - [ ] `docker-compose.yml` con PostgreSQL 16 e Redis
