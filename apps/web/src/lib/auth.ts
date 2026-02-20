@@ -4,6 +4,7 @@ import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { logAuditEvent, AUDIT_ACTIONS } from "@/lib/audit";
 import type { UserRole, UserStatus } from "@prisma/client";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
@@ -82,6 +83,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.status = token.status as UserStatus;
       }
       return session;
+    },
+  },
+  events: {
+    async signIn({ user }) {
+      await logAuditEvent({
+        action: AUDIT_ACTIONS.USER_LOGIN,
+        actorId: user.id,
+        actorEmail: user.email ?? undefined,
+      });
     },
   },
   pages: {

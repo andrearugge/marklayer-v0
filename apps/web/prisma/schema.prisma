@@ -73,3 +73,21 @@ model VerificationToken {
   @@unique([identifier, token])
   @@map("verification_tokens")
 }
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  action      String
+  actorId     String?  @map("actor_id")
+  actorEmail  String?  @map("actor_email")
+  targetId    String?  @map("target_id")
+  targetEmail String?  @map("target_email")
+  metadata    Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([action])
+  @@index([actorId])
+  @@index([targetId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

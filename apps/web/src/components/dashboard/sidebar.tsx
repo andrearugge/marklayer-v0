@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { NAV_ITEMS } from "./nav-items";
@@ -54,7 +54,10 @@ export function Sidebar() {
               Admin
             </p>
             <nav className="space-y-1">
-              {[{ label: "Users", href: "/admin/users", icon: ShieldCheck }].map(
+              {[
+                { label: "Users", href: "/admin/users", icon: ShieldCheck },
+                { label: "Audit Log", href: "/admin/audit-log", icon: ClipboardList },
+              ].map(
                 (item) => {
                   const isActive =
                     pathname === item.href ||

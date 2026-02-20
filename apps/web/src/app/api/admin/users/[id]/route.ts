@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { UpdateUserSchema } from "@/lib/validations/admin";
+import { logAuditEvent, AUDIT_ACTIONS } from "@/lib/audit";
 
 export async function PATCH(
   req: NextRequest,
@@ -71,6 +72,28 @@ export async function PATCH(
       createdAt: true,
     },
   });
+
+  if (parsed.data.role !== undefined) {
+    await logAuditEvent({
+      action: AUDIT_ACTIONS.USER_ROLE_CHANGED,
+      actorId: currentUser.id,
+      actorEmail: currentUser.email ?? undefined,
+      targetId: target.id,
+      targetEmail: target.email,
+      metadata: { oldRole: target.role, newRole: parsed.data.role },
+    });
+  }
+
+  if (parsed.data.status !== undefined) {
+    await logAuditEvent({
+      action: AUDIT_ACTIONS.USER_STATUS_CHANGED,
+      actorId: currentUser.id,
+      actorEmail: currentUser.email ?? undefined,
+      targetId: target.id,
+      targetEmail: target.email,
+      metadata: { oldStatus: target.status, newStatus: parsed.data.status },
+    });
+  }
 
   return NextResponse.json({ data: updated });
 }

@@ -19,3 +19,18 @@ export const UpdateUserSchema = z
 
 export type UsersQuery = z.infer<typeof UsersQuerySchema>;
 export type UpdateUserData = z.infer<typeof UpdateUserSchema>;
+
+export const AuditLogsQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  action: z
+    .enum([
+      "user.created",
+      "user.login",
+      "user.role_changed",
+      "user.status_changed",
+    ])
+    .optional(),
+});
+
+export type AuditLogsQuery = z.infer<typeof AuditLogsQuerySchema>;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { logAuditEvent, AUDIT_ACTIONS } from "@/lib/audit";
 
 const RegisterBodySchema = z.object({
   name: z.string().min(2),
@@ -41,6 +42,14 @@ export async function POST(req: NextRequest) {
     const user = await prisma.user.create({
       data: { name, email, password: hashedPassword },
       select: { id: true, email: true, name: true },
+    });
+
+    await logAuditEvent({
+      action: AUDIT_ACTIONS.USER_CREATED,
+      actorId: user.id,
+      actorEmail: user.email,
+      targetId: user.id,
+      targetEmail: user.email,
     });
 
     return NextResponse.json({ data: user }, { status: 201 });

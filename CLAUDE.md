@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 1 — Foundation
-**Step corrente**: 8 (Step 1.7 completato)
-**Ultimo commit**: feat(profile): step 1.7 — user profile page, PATCH /api/me, connected providers
+**Step corrente**: 9 (Step 1.8 completato)
+**Ultimo commit**: feat(audit): step 1.8 — audit log system, AuditLog model, logAuditEvent helper
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -246,14 +246,18 @@ ai-visibility-platform/
 - [x] jwt callback aggiornato: refresh di name/image da DB su trigger "update"
 - **Done when**: Build OK (17 route), utente può modificare profilo, UserButton si aggiorna ✅
 
-### Step 1.8 — Audit Log System
-- [ ] Modello Prisma `AuditLog`
-- [ ] Migration
-- [ ] Helper `logAuditEvent()` riusabile
-- [ ] Log automatico per: creazione utente, cambio ruolo, cambio status, login
-- [ ] Pagina admin `/admin/audit-log` con lista filtrata
-- [ ] API route: `GET /api/admin/audit-logs`
-- **Done when**: Ogni azione admin viene loggata, admin può consultare il log
+### Step 1.8 — Audit Log System ✅
+- [x] Modello Prisma `AuditLog` (id, action, actorId/Email, targetId/Email, metadata JSON, createdAt + indici)
+- [x] Migration `add-audit-log` applicata
+- [x] `lib/audit.ts`: `logAuditEvent()` helper + `AUDIT_ACTIONS` constants — never throws
+- [x] Log automatico `user.login` via NextAuth `events.signIn`
+- [x] Log automatico `user.created` in `POST /api/auth/register`
+- [x] Log automatico `user.role_changed` / `user.status_changed` in `PATCH /api/admin/users/:id` con metadata {old, new}
+- [x] `GET /api/admin/audit-logs` con filtro per action + paginazione
+- [x] Pagina `/admin/audit-log`: tabella Evento/Attore/Target/Dettagli/Data + filtro + paginazione
+- [x] Sidebar Admin aggiornata: aggiunto link "Audit Log" con icona ClipboardList
+- **Note**: Prisma `Json` field richiede cast a `Prisma.InputJsonValue`; `prisma generate` necessario dopo migration
+- **Done when**: Build OK (19 route), login/register/cambio ruolo vengono loggati ✅
 
 ### Step 1.9 — Foundation Polish
 - [ ] Error boundaries per le sezioni principali
