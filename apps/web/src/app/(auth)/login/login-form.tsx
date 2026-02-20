@@ -31,7 +31,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   default: "Si è verificato un errore. Riprova.",
 };
 
-export function LoginForm({ callbackUrl = "/projects", error }: LoginFormProps) {
+export function LoginForm({ callbackUrl = "/dashboard", error }: LoginFormProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);

@@ -5,9 +5,9 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 1 — Foundation
-**Step corrente**: 5 (Step 1.4 completato)
-**Ultimo commit**: feat(auth): step 1.4 — proxy.ts route protection, getCurrentUser helper
-**Data ultimo aggiornamento**: 2026-02-20
+**Step corrente**: 6 (Step 1.5 completato)
+**Ultimo commit**: feat(ui): step 1.5 — dashboard layout shell, sidebar, header, breadcrumbs
+**Data ultimo aggiornamento**: 2026-02-18
 
 ---
 
@@ -208,14 +208,18 @@ ai-visibility-platform/
 - **Note**: `auth(handler)` di NextAuth v5 inietta `req.auth` (sessione) — usare come wrapper del proxy
 - **Done when**: Build mostra `ƒ Proxy (Middleware)`, redirect funzionanti ✅
 
-### Step 1.5 — Dashboard Layout Shell
-- [ ] Layout dashboard con sidebar navigazione
-- [ ] Sidebar responsive (collapsible su mobile)
-- [ ] Header con UserButton
-- [ ] Pagina dashboard vuota (placeholder)
-- [ ] Navigazione: Dashboard, Projects, Content, Graph, Settings
-- [ ] Breadcrumbs
-- **Done when**: Layout completo, navigazione funzionante, responsive su mobile
+### Step 1.5 — Dashboard Layout Shell ✅
+- [x] Layout dashboard con sidebar navigazione
+- [x] Sidebar responsive (hidden su mobile, Sheet-based mobile nav)
+- [x] Header sticky con UserButton e breadcrumbs
+- [x] Pagina `/dashboard` (dashboard home)
+- [x] Navigazione: Dashboard, Projects, Content, Graph, Settings
+- [x] Breadcrumbs dinamici da `usePathname()`
+- [x] `TooltipProvider` nel root layout, shadcn sheet/scroll-area/tooltip installati
+- [x] Redirect post-login/register aggiornati a `/dashboard`
+- [x] proxy.ts aggiornato: `/dashboard` in PROTECTED_PREFIXES, redirect target `/dashboard`
+- **Note**: Sidebar usa `hidden lg:flex`; MobileNav usa `lg:hidden` con Sheet
+- **Done when**: Build OK (13 route), Proxy Middleware presente, TypeScript 0 errori ✅
 
 ### Step 1.6 — Admin Panel: User Management
 - [ ] Layout admin separato

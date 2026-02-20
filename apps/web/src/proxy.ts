@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 
 // Routes that require authentication (dashboard area)
 const PROTECTED_PREFIXES = [
+  "/dashboard",
   "/projects",
   "/content",
   "/graph",
@@ -23,7 +24,7 @@ export default auth((req) => {
   // Auth pages → redirect to app if already authenticated
   if (AUTH_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     if (isLoggedIn) {
-      return NextResponse.redirect(new URL("/projects", req.url));
+      return NextResponse.redirect(new URL("/dashboard", req.url));
     }
     return NextResponse.next();
   }
@@ -37,7 +38,7 @@ export default auth((req) => {
       );
     }
     if (req.auth?.user.role !== "admin") {
-      return NextResponse.redirect(new URL("/projects", req.url));
+      return NextResponse.redirect(new URL("/dashboard", req.url));
     }
     return NextResponse.next();
   }

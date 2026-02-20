@@ -25,7 +25,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <LoginForm callbackUrl={callbackUrl ?? "/projects"} error={error} />
+        <LoginForm callbackUrl={callbackUrl ?? "/dashboard"} error={error} />
       </CardContent>
       <CardFooter className="flex justify-center">
         <p className="text-sm text-muted-foreground">
