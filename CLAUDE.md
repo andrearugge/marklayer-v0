@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2.4 completato
-**Ultimo commit**: feat(content): step 2.4 — Content List & Filters
+**Step corrente**: 2.5 completato
+**Ultimo commit**: feat(content): step 2.5 — Content Detail & Edit
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -629,17 +629,21 @@ const updateContentSchema = createContentSchema.partial().extend({
 - [x] Empty state distinto: "nessun contenuto nel progetto" vs "nessun risultato per questi filtri"
 - **Done when**: Build OK (24 route), lista filtrabile e paginabile, stats sempre non filtrate ✅
 
-### Step 2.5 — Content Detail & Edit
-- [ ] `GET /api/projects/:id/content/:contentId` — dettaglio completo
-- [ ] `PATCH /api/projects/:id/content/:contentId` — modifica campi + cambio status
-- [ ] `DELETE /api/projects/:id/content/:contentId` — rimozione (hard delete)
-- [ ] Pagina `/projects/:id/content/:contentId` — vista dettaglio
-  - Header: titolo, piattaforma, tipo, status, URL (link esterno)
-  - Sezione contenuto: rawContent renderizzato (o messaggio "contenuto non ancora estratto")
-  - Sidebar: metadata (word count, lingua, data pubblicazione, data creazione, hash)
-  - Azioni: modifica (dialog), cambia status, elimina (conferma)
-- [ ] Breadcrumbs: Projects > Nome Progetto > Contenuti > Titolo Contenuto
-- **Done when**: Vista dettaglio completa, edit funzionante, delete con conferma
+### Step 2.5 — Content Detail & Edit ✅
+- [x] `GET /api/projects/:id/content/:contentId` — dettaglio completo
+- [x] `PATCH /api/projects/:id/content/:contentId` — modifica campi + cambio status; ricalcola wordCount/excerpt se rawContent aggiornato
+- [x] `DELETE /api/projects/:id/content/:contentId` — hard delete con audit log
+- [x] resolveItem via `findFirst({ id, projectId })` — impedisce IDOR
+- [x] `UpdateContentSchema` e `EditContentFormSchema` in lib/validations/content.ts
+- [x] `CONTENT_UPDATED`, `CONTENT_DELETED` in lib/audit.ts
+- [x] Pagina `/projects/:id/content/:contentId`: header + grid 2/3+1/3
+  - rawContent in `<pre>` con whitespace-pre-wrap, o empty state con suggerimento
+  - Sidebar: word count, lingua, published, added, updated, sorgente, hash (12 char)
+  - `ChangeStatusSelect`: dropdown status sia in header che sidebar
+  - `EditContentDialog`: form pre-compilato (no status)
+  - `DeleteContentButton`: hard delete AlertDialog + redirect al progetto
+- [x] breadcrumbs.tsx: "content" → "Contenuti"
+- **Done when**: Build OK (26 route), CRUD completo, edit + status change + delete funzionanti ✅
 
 ### Step 2.6 — CSV Import
 - [ ] `POST /api/projects/:id/content/import` — upload e parsing CSV

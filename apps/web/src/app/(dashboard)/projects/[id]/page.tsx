@@ -7,6 +7,7 @@ import { ContentQuerySchema } from "@/lib/validations/content";
 import { EditProjectDialog } from "./edit-project-dialog";
 import { ArchiveProjectButton } from "./archive-project-button";
 import { AddContentDialog } from "./add-content-dialog";
+import { CsvImportDialog } from "./csv-import-dialog";
 import { ContentFilters } from "./content-filters";
 import { ContentPagination } from "./content-pagination";
 import { Badge } from "@/components/ui/badge";
@@ -236,6 +237,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
           {!isArchived && (
             <div className="flex items-center gap-2 shrink-0 flex-wrap">
               <AddContentDialog projectId={project.id} />
+              <CsvImportDialog projectId={project.id} />
               <EditProjectDialog project={project} />
               <ArchiveProjectButton
                 projectId={project.id}
