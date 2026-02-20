@@ -14,9 +14,15 @@ const SEGMENT_LABELS: Record<string, string> = {
   admin: "Admin",
   users: "Users",
   profile: "Profile",
+  "audit-log": "Audit Log",
 };
 
+// UUID v4 pattern — show "Detail" instead of the raw ID in breadcrumbs
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function getLabel(segment: string): string {
+  if (UUID_RE.test(segment)) return "Detail";
   return SEGMENT_LABELS[segment] ?? segment.charAt(0).toUpperCase() + segment.slice(1);
 }
 
