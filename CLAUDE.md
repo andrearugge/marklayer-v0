@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2b.1 completato
-**Ultimo commit**: feat(step-2b.1): web crawler agent — httpx + BeautifulSoup + Next.js proxy
+**Step corrente**: 2b.2 completato
+**Ultimo commit**: feat(step-2b.2): platform search agent — Google CSE + Next.js proxy
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -723,22 +723,20 @@ const updateContentSchema = createContentSchema.partial().extend({
 - [ ] API Next.js: `POST /api/projects/:id/discovery/crawl` che chiama il servizio Python
 - **Done when**: Dato un URL sito, il crawler trova e salva le pagine con contenuto estratto
 
-### Step 2b.2 — Platform Search Agent
-- [ ] Integrazione Google Custom Search JSON API (o alternativa scelta)
-- [ ] Endpoint `POST /api/search/platform` — riceve nome/brand + piattaforme target
-- [ ] Query templates per piattaforma:
-  - Website: `site:domain.com`
-  - Substack: `site:substack.com "nome autore"`
-  - Medium: `site:medium.com "nome autore"`
-  - LinkedIn: `site:linkedin.com/pulse "nome autore"` (articoli)
-  - Reddit: `site:reddit.com "nome autore" OR "brand"`
-  - YouTube: `site:youtube.com "nome canale"`
-  - News: `"nome brand" -site:domain.com` (menzioni esterne)
-- [ ] Parsing risultati: URL, titolo, snippet
-- [ ] Salvataggio come `ContentItem` con status `DISCOVERED` e method `AGENT_SEARCH`
-- [ ] Dedup contro contenuti già esistenti nel progetto
-- [ ] API Next.js: `POST /api/projects/:id/discovery/search`
-- **Done when**: Ricerca su piattaforme funzionante, risultati salvati e deduplicati
+### Step 2b.2 — Platform Search Agent ✅
+- [x] `agents/search.py`: SearchAgent con Google Custom Search JSON API
+- [x] Query templates: `site:platform.com "{brand}"` per tutte le piattaforme;
+  WEBSITE richiede domain; NEWS usa brand+keywords con `-site:domain` exclusion
+- [x] Dedup via seen_urls set prima di restituire i risultati; skipDuplicates nel DB
+- [x] Graceful error handling: 429 quota, 403 key invalida, network errors
+- [x] `api/search.py`: `POST /api/search/platform` + `GET /api/search/platform/preview` (debug)
+- [x] `config.py`: GOOGLE_CSE_API_KEY + GOOGLE_CSE_ID
+- [x] `docker-compose.yml`: env vars per engine
+- [x] `.env.example`: GOOGLE_CSE_API_KEY + GOOGLE_CSE_ID
+- [x] `POST /api/projects/:id/discovery/search`: chiama engine, mappa platform → SourcePlatform + ContentType
+  (MENTION per NEWS, VIDEO per YOUTUBE, SOCIAL_POST per REDDIT/TWITTER)
+- **Done when**: Ricerca su piattaforme funzionante, risultati salvati e deduplicati ✅
+- **Note**: Aggiungere GOOGLE_CSE_API_KEY + GOOGLE_CSE_ID al .env.local; creare CSE su programmablesearchengine.google.com
 
 ### Step 2b.3 — Content Fetching & Extraction
 - [ ] Per ogni `ContentItem` con URL ma senza `rawContent`: fetch e estrazione
