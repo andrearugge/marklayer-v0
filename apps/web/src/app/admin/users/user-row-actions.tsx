@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { MoreHorizontal, ShieldCheck, ShieldOff, UserCheck, UserX } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -88,7 +89,7 @@ export function UserRowActions({ user, currentUserId }: UserRowActionsProps) {
     if (pendingAction === "suspend") body.status = "suspended";
     if (pendingAction === "activate") body.status = "active";
 
-    await fetch(`/api/admin/users/${user.id}`, {
+    const res = await fetch(`/api/admin/users/${user.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -96,6 +97,19 @@ export function UserRowActions({ user, currentUserId }: UserRowActionsProps) {
 
     setIsLoading(false);
     setPendingAction(null);
+
+    if (res.ok) {
+      const messages: Record<PendingAction, string> = {
+        promote: `${user.name ?? user.email} promosso ad Admin.`,
+        demote: `Privilegi Admin rimossi da ${user.name ?? user.email}.`,
+        suspend: `${user.name ?? user.email} sospeso.`,
+        activate: `${user.name ?? user.email} riattivato.`,
+      };
+      toast.success(messages[pendingAction]);
+    } else {
+      toast.error("Si è verificato un errore. Riprova.");
+    }
+
     router.refresh();
   }
 

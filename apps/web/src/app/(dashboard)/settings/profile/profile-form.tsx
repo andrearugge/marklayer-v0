@@ -19,7 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle2 } from "lucide-react";
+import { toast } from "sonner";
 
 interface ProfileFormProps {
   initialName: string;
@@ -44,7 +44,6 @@ export function ProfileForm({ initialName, initialImage, email }: ProfileFormPro
   const { update } = useSession();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
   const form = useForm<UpdateProfileData>({
     resolver: zodResolver(UpdateProfileSchema),
@@ -60,7 +59,6 @@ export function ProfileForm({ initialName, initialImage, email }: ProfileFormPro
   async function onSubmit(values: UpdateProfileData) {
     setIsLoading(true);
     setError(null);
-    setSuccess(false);
 
     const res = await fetch("/api/me", {
       method: "PATCH",
@@ -79,7 +77,7 @@ export function ProfileForm({ initialName, initialImage, email }: ProfileFormPro
     // Refresh the session so UserButton reflects the new name/image
     await update();
     setIsLoading(false);
-    setSuccess(true);
+    toast.success("Profilo aggiornato con successo.");
     router.refresh();
   }
 
@@ -104,13 +102,6 @@ export function ProfileForm({ initialName, initialImage, email }: ProfileFormPro
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {success && (
-        <Alert>
-          <CheckCircle2 className="h-4 w-4" />
-          <AlertDescription>Profilo aggiornato con successo.</AlertDescription>
         </Alert>
       )}
 

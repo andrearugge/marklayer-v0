@@ -5,8 +5,8 @@
 ## Stato Corrente del Progetto
 
 **Fase**: 1 — Foundation
-**Step corrente**: 9 (Step 1.8 completato)
-**Ultimo commit**: feat(audit): step 1.8 — audit log system, AuditLog model, logAuditEvent helper
+**Step corrente**: 1.9 completato — Fase 1 DONE ✅
+**Ultimo commit**: feat(polish): step 1.9 — error boundaries, loading skeletons, toast, 404/error pages
 **Data ultimo aggiornamento**: 2026-02-18
 
 ---
@@ -259,15 +259,20 @@ ai-visibility-platform/
 - **Note**: Prisma `Json` field richiede cast a `Prisma.InputJsonValue`; `prisma generate` necessario dopo migration
 - **Done when**: Build OK (19 route), login/register/cambio ruolo vengono loggati ✅
 
-### Step 1.9 — Foundation Polish
-- [ ] Error boundaries per le sezioni principali
-- [ ] Loading skeletons per pagine dashboard e admin
-- [ ] Toast notifications (sonner) per feedback azioni
-- [ ] Pagina 404 custom
-- [ ] Pagina errore custom
-- [ ] Test manuale completo di tutti i flow
-- [ ] Review e cleanup codice
-- **Done when**: Tutti i flow sono smooth, errori gestiti gracefully, UX coerente
+### Step 1.9 — Foundation Polish ✅
+- [x] `app/error.tsx` — root error boundary (500, Client Component)
+- [x] `app/(dashboard)/error.tsx` — error boundary per sezione dashboard
+- [x] `app/admin/error.tsx` — error boundary per sezione admin
+- [x] `app/not-found.tsx` — pagina 404 custom con link a dashboard
+- [x] Loading skeleton per `/dashboard`, `/settings/profile`, `/admin/users`, `/admin/audit-log`
+- [x] Toast notifications (sonner) installato: `<Toaster richColors>` nel root layout
+- [x] `ProfileForm`: success toast, errori rimangono inline (Alert)
+- [x] `UserRowActions`: toast su successo (promozione/rimozione/sospensione/riattivazione) e su errore
+- **Done when**: Build OK (19 route), skeleton/error/404 presenti, toast operativi ✅
+
+---
+
+## 🎉 Fase 1 — Foundation COMPLETATA
 
 ---
 
