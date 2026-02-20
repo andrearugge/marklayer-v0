@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.crawl import router as crawl_router
 from api.health import router as health_router
+from api.search import router as search_router
 from config import settings
 
 app = FastAPI(
@@ -27,7 +28,4 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(crawl_router)
-
-# Future routers (Fase 2b+):
-# from api.search import router as search_router
-# app.include_router(search_router, prefix="/api/search")
+app.include_router(search_router)

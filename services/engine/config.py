@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379"
 
+    # Google Custom Search Engine (Step 2b.2+)
+    google_cse_api_key: str = ""
+    google_cse_id: str = ""
+
     # Anthropic
     anthropic_api_key: str = ""
 
