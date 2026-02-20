@@ -47,3 +47,12 @@ export const ContentQuerySchema = z.object({
 });
 
 export type ContentQueryData = z.infer<typeof ContentQuerySchema>;
+
+// ─── Bulk action schema ───────────────────────────────────────────────────────
+
+export const BulkActionSchema = z.object({
+  ids: z.array(z.string()).min(1, "Seleziona almeno un elemento").max(100),
+  action: z.enum(["approve", "reject", "archive", "delete"]),
+});
+
+export type BulkActionData = z.infer<typeof BulkActionSchema>;

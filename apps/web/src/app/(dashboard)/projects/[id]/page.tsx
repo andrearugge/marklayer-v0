@@ -4,65 +4,23 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { assertProjectOwnership } from "@/lib/projects";
 import { ContentQuerySchema } from "@/lib/validations/content";
+import {
+  PLATFORM_LABELS,
+  TYPE_LABELS,
+  STATUS_LABELS,
+  STATUS_COLORS,
+} from "@/lib/content-labels";
 import { EditProjectDialog } from "./edit-project-dialog";
 import { ArchiveProjectButton } from "./archive-project-button";
 import { AddContentDialog } from "./add-content-dialog";
 import { CsvImportDialog } from "./csv-import-dialog";
 import { ContentFilters } from "./content-filters";
 import { ContentPagination } from "./content-pagination";
+import { ContentTable } from "./content-table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Globe, FileText, ArrowLeft, ExternalLink } from "lucide-react";
+import { Globe, FileText, ArrowLeft } from "lucide-react";
 import type { SourcePlatform, ContentType, ContentStatus, Prisma } from "@prisma/client";
-
-// ─── Label maps ──────────────────────────────────────────────────────────────
-
-const PLATFORM_LABELS: Record<SourcePlatform, string> = {
-  WEBSITE: "Website",
-  SUBSTACK: "Substack",
-  MEDIUM: "Medium",
-  LINKEDIN: "LinkedIn",
-  REDDIT: "Reddit",
-  QUORA: "Quora",
-  YOUTUBE: "YouTube",
-  TWITTER: "Twitter / X",
-  NEWS: "News",
-  OTHER: "Altro",
-};
-
-const TYPE_LABELS: Record<ContentType, string> = {
-  ARTICLE: "Articolo",
-  BLOG_POST: "Blog Post",
-  PAGE: "Pagina",
-  SOCIAL_POST: "Post Social",
-  COMMENT: "Commento",
-  MENTION: "Menzione",
-  VIDEO: "Video",
-  PODCAST: "Podcast",
-  OTHER: "Altro",
-};
-
-const STATUS_LABELS: Record<ContentStatus, string> = {
-  DISCOVERED: "Trovato",
-  APPROVED: "Approvato",
-  REJECTED: "Rifiutato",
-  ARCHIVED: "Archiviato",
-};
-
-const STATUS_COLORS: Record<ContentStatus, string> = {
-  DISCOVERED: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-  APPROVED: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-  REJECTED: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-  ARCHIVED: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-};
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -141,7 +99,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
       ? { publishedAt: sortOrder }
       : { createdAt: sortOrder };
 
-  // Run all queries in parallel
   const [totalCount, byPlatform, byType, byStatus, items, contentTotal] =
     await Promise.all([
       prisma.contentItem.count({ where: { projectId: id } }),
@@ -188,7 +145,13 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
   ) as Partial<Record<ContentStatus, number>>;
 
   const isArchived = project.status === "ARCHIVED";
-  const hasFilters = !!(status || sourcePlatform || contentType || search);
+
+  // Serialize dates for client components (Next.js JSON serialization)
+  const serializedItems = items.map((item) => ({
+    ...item,
+    publishedAt: item.publishedAt?.toISOString() ?? null,
+    createdAt: item.createdAt.toISOString(),
+  }));
 
   return (
     <div className="space-y-6">
@@ -256,7 +219,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
         <StatCard label="Piattaforme" value={byPlatform.length} />
       </div>
 
-      {/* ── Breakdown cards (only when there's content) ── */}
+      {/* ── Breakdown cards ── */}
       {totalCount > 0 && (
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
@@ -337,7 +300,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
         </div>
 
         {totalCount === 0 ? (
-          /* Empty project — no content at all */
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
             <FileText className="mb-4 h-12 w-12 text-muted-foreground/40" />
             <h3 className="mb-1 text-lg font-semibold">Nessun contenuto</h3>
@@ -355,87 +317,13 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             />
 
             {items.length === 0 ? (
-              /* Filtered but no results */
               <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-10 text-center">
                 <p className="text-sm text-muted-foreground">
                   Nessun contenuto corrisponde ai filtri selezionati.
                 </p>
               </div>
             ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Titolo</TableHead>
-                      <TableHead className="w-32">Piattaforma</TableHead>
-                      <TableHead className="w-28">Tipo</TableHead>
-                      <TableHead className="w-28">Status</TableHead>
-                      <TableHead className="w-32 text-right">Data</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="max-w-xs">
-                          <div className="flex items-start gap-2">
-                            <Link
-                              href={`/projects/${id}/content/${item.id}`}
-                              className="font-medium hover:text-primary transition-colors line-clamp-2 leading-snug"
-                            >
-                              {item.title}
-                            </Link>
-                            {item.url && (
-                              <a
-                                href={item.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="shrink-0 mt-0.5 text-muted-foreground hover:text-foreground"
-                              >
-                                <ExternalLink className="h-3.5 w-3.5" />
-                              </a>
-                            )}
-                          </div>
-                          {item.wordCount && (
-                            <span className="text-xs text-muted-foreground">
-                              {item.wordCount.toLocaleString("it-IT")} parole
-                            </span>
-                          )}
-                        </TableCell>
-
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {PLATFORM_LABELS[item.sourcePlatform]}
-                          </Badge>
-                        </TableCell>
-
-                        <TableCell>
-                          <span className="text-xs text-muted-foreground">
-                            {TYPE_LABELS[item.contentType]}
-                          </span>
-                        </TableCell>
-
-                        <TableCell>
-                          <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[item.status]}`}
-                          >
-                            {STATUS_LABELS[item.status]}
-                          </span>
-                        </TableCell>
-
-                        <TableCell className="text-right text-xs text-muted-foreground">
-                          {new Date(
-                            item.publishedAt ?? item.createdAt
-                          ).toLocaleDateString("it-IT", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                          })}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <ContentTable items={serializedItems} projectId={project.id} />
             )}
 
             <ContentPagination

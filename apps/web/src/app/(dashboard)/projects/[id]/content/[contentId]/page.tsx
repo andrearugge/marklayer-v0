@@ -9,41 +9,11 @@ import { DeleteContentButton } from "./delete-content-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, ExternalLink, FileText } from "lucide-react";
-import type { SourcePlatform, ContentType, DiscoveryMethod } from "@prisma/client";
-
-// ─── Label maps ──────────────────────────────────────────────────────────────
-
-const PLATFORM_LABELS: Record<SourcePlatform, string> = {
-  WEBSITE: "Website",
-  SUBSTACK: "Substack",
-  MEDIUM: "Medium",
-  LINKEDIN: "LinkedIn",
-  REDDIT: "Reddit",
-  QUORA: "Quora",
-  YOUTUBE: "YouTube",
-  TWITTER: "Twitter / X",
-  NEWS: "News",
-  OTHER: "Altro",
-};
-
-const TYPE_LABELS: Record<ContentType, string> = {
-  ARTICLE: "Articolo",
-  BLOG_POST: "Blog Post",
-  PAGE: "Pagina",
-  SOCIAL_POST: "Post Social",
-  COMMENT: "Commento",
-  MENTION: "Menzione",
-  VIDEO: "Video",
-  PODCAST: "Podcast",
-  OTHER: "Altro",
-};
-
-const DISCOVERY_LABELS: Record<DiscoveryMethod, string> = {
-  MANUAL: "Aggiunto manualmente",
-  CSV_IMPORT: "Importato da CSV",
-  AGENT_CRAWL: "Trovato dal crawler",
-  AGENT_SEARCH: "Trovato tramite ricerca",
-};
+import {
+  PLATFORM_LABELS,
+  TYPE_LABELS,
+  DISCOVERY_LABELS,
+} from "@/lib/content-labels";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
