@@ -26,6 +26,8 @@ import { ScoreCard } from "./score-card";
 import { EntitiesPanel } from "./entities-panel";
 import { TopicsPanel } from "./topics-panel";
 import { ContentHealthCard } from "./content-health-card";
+import { GapAnalysisCard } from "./gap-analysis-card";
+import type { GapAnalysisData } from "./gap-analysis-card";
 import type { SerializedDiscoveryJob } from "./discovery-job-status";
 import type { DiscoveredItem } from "./discovery-review";
 import type { SerializedAnalysisJob } from "./analysis-job-status";
@@ -274,6 +276,11 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     total: 0, withRawContent: 0, avgWordCount: null,
     approved: 0, discovered: 0, rejected: 0, archived: 0,
   };
+  let gapData: GapAnalysisData = {
+    missingPlatforms: [], weakPlatforms: [], lowCoverageEntities: [],
+    thinTopics: [], freshContent: 0, agingContent: 0, staleContent: 0,
+    totalWithDate: 0, approvedCount: 0,
+  };
 
   if (activeTab === "analysis") {
     entityPage = Math.max(1, Number(rawSearch.entityPage) || 1);
@@ -331,9 +338,17 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
       }),
     ]);
 
-    const withRawCount = await prisma.contentItem.count({
-      where: { projectId: id, rawContent: { not: null } },
-    });
+    const now = new Date();
+    const sixMonthsAgo = new Date(now); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const twelveMonthsAgo = new Date(now); twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+
+    const [withRawCount, freshCount, agingCount, staleCount, totalWithDateCount] = await Promise.all([
+      prisma.contentItem.count({ where: { projectId: id, rawContent: { not: null } } }),
+      prisma.contentItem.count({ where: { projectId: id, publishedAt: { gte: sixMonthsAgo } } }),
+      prisma.contentItem.count({ where: { projectId: id, publishedAt: { gte: twelveMonthsAgo, lt: sixMonthsAgo } } }),
+      prisma.contentItem.count({ where: { projectId: id, publishedAt: { lt: twelveMonthsAgo } } }),
+      prisma.contentItem.count({ where: { projectId: id, publishedAt: { not: null } } }),
+    ]);
 
     const statusHealthMap = Object.fromEntries(
       rawHealthStats.map((r) => [r.status, r._count._all])
@@ -365,14 +380,57 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     entityPaginationTotal = rawEntityTotal;
     entityTotalPages = Math.ceil(rawEntityTotal / entityLimit);
     topics = rawTopics as TopicItem[];
+    const approvedCount = statusHealthMap["APPROVED"] ?? 0;
     contentHealth = {
       total: totalCount,
       withRawContent: withRawCount,
       avgWordCount: rawWordCount._avg.wordCount ?? null,
-      approved: statusHealthMap["APPROVED"] ?? 0,
+      approved: approvedCount,
       discovered: statusHealthMap["DISCOVERED"] ?? 0,
       rejected: statusHealthMap["REJECTED"] ?? 0,
       archived: statusHealthMap["ARCHIVED"] ?? 0,
+    };
+
+    // ── Gap analysis ─────────────────────────────────────────────────────────
+
+    // All known platforms vs those with content
+    const allPlatforms = Object.keys(PLATFORM_LABELS) as SourcePlatform[];
+    const platformsWithContent = new Set(byPlatform.map((r) => r.sourcePlatform));
+    const missingPlatforms = allPlatforms
+      .filter((p) => p !== "OTHER" && !platformsWithContent.has(p))
+      .map((p) => ({ platform: p, label: PLATFORM_LABELS[p] }));
+    const weakPlatforms = byPlatform
+      .filter((r) => r.sourcePlatform !== "OTHER" && r._count._all <= 2)
+      .map((r) => ({ platform: r.sourcePlatform, label: PLATFORM_LABELS[r.sourcePlatform], count: r._count._all }));
+
+    // Topic depth: topics with frequency < 3
+    const thinTopics = rawTopics
+      .filter((t) => t.frequency < 3)
+      .map((t) => ({ label: t.label, count: t.frequency }));
+
+    // Low-coverage entities: top-10 non-TOPIC entities with coverage < 25% of approved
+    const lowCoverageEntities =
+      approvedCount >= 5
+        ? rawEntities
+            .filter(
+              (e) =>
+                ["BRAND", "PERSON", "ORGANIZATION", "PRODUCT"].includes(e.type) &&
+                e.frequency / approvedCount < 0.25
+            )
+            .slice(0, 3)
+            .map((e) => ({ label: e.label, type: e.type, frequency: e.frequency }))
+        : [];
+
+    gapData = {
+      missingPlatforms,
+      weakPlatforms,
+      lowCoverageEntities,
+      thinTopics,
+      freshContent: freshCount,
+      agingContent: agingCount,
+      staleContent: staleCount,
+      totalWithDate: totalWithDateCount,
+      approvedCount,
     };
   }
 
@@ -703,7 +761,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             />
           )}
 
-          {/* Score + Entities + Topics grid */}
+          {/* Score + Health grid */}
           <div className="grid gap-6 lg:grid-cols-2">
             <ScoreCard
               projectId={id}
@@ -712,6 +770,9 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             />
             <ContentHealthCard health={contentHealth} />
           </div>
+
+          {/* Gap analysis */}
+          <GapAnalysisCard data={gapData} />
 
           <EntitiesPanel
             projectId={id}
