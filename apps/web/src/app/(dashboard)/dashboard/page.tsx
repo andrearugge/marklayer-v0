@@ -97,46 +97,46 @@ export default async function DashboardPage() {
 
   const userId = user.id;
 
-  const [activeProjectCount, contentCounts, projectsWithScores, recentJobs] =
-    await Promise.all([
-      // KPI 1: active projects
-      prisma.project.count({ where: { userId, status: "ACTIVE" } }),
-
-      // KPI 2+3 + status breakdown: content grouped by status
-      prisma.contentItem.groupBy({
-        by: ["status"],
-        where: { project: { userId } },
-        _count: { _all: true },
-      }),
-
-      // Projects table: name, domain, content count, score
-      prisma.project.findMany({
-        where: { userId, status: "ACTIVE" },
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true,
-          name: true,
-          domain: true,
-          _count: { select: { contentItems: true } },
-          score: {
-            select: { overallScore: true, isStale: true, computedAt: true },
-          },
+  // Fetch projects first — we need their IDs for the groupBy scalar filter
+  const [projectsWithScores, recentJobs] = await Promise.all([
+    // Projects table: name, domain, content count, score
+    prisma.project.findMany({
+      where: { userId, status: "ACTIVE" },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        domain: true,
+        _count: { select: { contentItems: true } },
+        score: {
+          select: { overallScore: true, isStale: true, computedAt: true },
         },
-      }),
+      },
+    }),
 
-      // Recent activity: last 5 completed analysis jobs
-      prisma.analysisJob.findMany({
-        where: { status: "COMPLETED", project: { userId } },
-        orderBy: { completedAt: "desc" },
-        take: 5,
-        select: {
-          id: true,
-          jobType: true,
-          completedAt: true,
-          project: { select: { id: true, name: true } },
-        },
-      }),
-    ]);
+    // Recent activity: last 5 completed analysis jobs
+    prisma.analysisJob.findMany({
+      where: { status: "COMPLETED", project: { userId } },
+      orderBy: { completedAt: "desc" },
+      take: 5,
+      select: {
+        id: true,
+        jobType: true,
+        completedAt: true,
+        project: { select: { id: true, name: true } },
+      },
+    }),
+  ]);
+
+  const activeProjectCount = projectsWithScores.length;
+  const projectIds = projectsWithScores.map((p) => p.id);
+
+  // groupBy requires a scalar filter — use projectId: { in: [...] }
+  const contentCounts = await prisma.contentItem.groupBy({
+    by: ["status"],
+    where: { projectId: { in: projectIds } },
+    _count: { _all: true },
+  });
 
   // ── Derived values ──────────────────────────────────────────────────────────
 

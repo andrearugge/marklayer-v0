@@ -4,13 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { GraphCanvas } from "./graph-canvas";
 import type { GraphNode, GraphEdge } from "./graph-canvas";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { ProjectSelector } from "./project-selector";
 import { NetworkIcon } from "lucide-react";
 
 // ─── Co-occurrence edge query ─────────────────────────────────────────────────
@@ -160,7 +154,3 @@ export default async function GraphPage({
   );
 }
 
-// ─── Project selector (Client Component) ─────────────────────────────────────
-
-// Inline import to keep file simpler — imported from a separate file
-import { ProjectSelector } from "./project-selector";
