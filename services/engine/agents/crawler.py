@@ -314,13 +314,25 @@ def _get_main_content(soup: BeautifulSoup) -> tuple[str, int]:
     for tag in clone.find_all(_NOISE_TAGS):
         tag.decompose()
 
-    # Remove elements whose class or id looks like noise
+    # Remove elements whose class or id looks like noise.
+    # Two-pass approach: collect first, then decompose.
+    # Decomposing during iteration causes AttributeError because BeautifulSoup
+    # clears __dict__ on the entire subtree, leaving child tags with attrs=None
+    # while still present in the previously-generated find_all() list.
+    to_remove = []
     for tag in clone.find_all(True):
         if not isinstance(tag, Tag):
             continue
-        classes = " ".join(tag.get("class") or [])
-        tag_id = tag.get("id") or ""
-        if _NOISE_PATTERN.search(classes) or _NOISE_PATTERN.search(str(tag_id)):
+        attrs = getattr(tag, "attrs", None)
+        if not attrs:
+            continue
+        classes = " ".join(attrs.get("class") or [])
+        tag_id = str(attrs.get("id") or "")
+        if _NOISE_PATTERN.search(classes) or _NOISE_PATTERN.search(tag_id):
+            to_remove.append(tag)
+    for tag in to_remove:
+        # Skip if already removed as part of a parent's subtree
+        if getattr(tag, "attrs", None) is not None:
             tag.decompose()
 
     # Find the most likely main content container
