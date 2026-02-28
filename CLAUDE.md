@@ -3,8 +3,8 @@
 ## Stato Corrente
 
 **Fase**: 3 — Knowledge Graph & Analysis
-**Step corrente**: 3.0 completato → prossimo: Step 3.1
-**Ultimo commit**: feat(step-3.0): knowledge graph schema — pgvector, Entity, AnalysisJob, ProjectScore
+**Step corrente**: 3.1 completato → prossimo: Step 3.2
+**Ultimo commit**: feat(step-3.1): entity extraction pipeline — Claude Haiku, EXTRACT_ENTITIES job, analysis worker
 **Aggiornato**: 2026-02-28
 
 ---
@@ -333,22 +333,23 @@ COMPUTE_SCORE       → calcolo score + suggestions LLM
 - **Note**: pgvector deve essere abilitato prima di `migrate deploy` — usare `migration.sql` con SQL raw
 - **Done when**: migration applicata, `prisma generate` OK, build OK ✅
 
-### Step 3.1 — Entity Extraction Pipeline
-- [ ] `agents/extractor.py`: `EntityExtractorAgent`
+### Step 3.1 — Entity Extraction Pipeline ✅
+- [x] `agents/extractor.py`: `EntityExtractorAgent`
   - Client Anthropic asincrono, `claude-haiku-4-5-20251001`
   - Tool use / JSON structured output: schema `{entities: [{label, type, salience, context}]}`
   - Batch: 1 chiamata LLM per content item (semplicità > throughput per MVP)
   - Retry su `APIStatusError` 429/529 con exponential backoff
   - Normalizzazione: `label.strip().lower()`, type uppercase
-- [ ] `api/extract.py`: `POST /api/extract/entities` — body `[{id, text, title}]`, response `[{id, entities}]`
-- [ ] `requirements.txt`: nessuna dipendenza aggiuntiva (anthropic già presente)
-- [ ] BullMQ: aggiungere `EXTRACT_ENTITIES` al worker
-  - Fetch content items con `rawContent IS NOT NULL AND status = APPROVED`
+- [x] `api/extract.py`: `POST /api/extract/entities` — body `[{id, text, title}]`, response `[{id, entities}]`
+- [x] `requirements.txt`: nessuna dipendenza aggiuntiva (anthropic già presente)
+- [x] BullMQ: aggiungere `EXTRACT_ENTITIES` al worker (secondo Worker su queue "analysis")
+  - Fetch content items con `rawContent IS NOT NULL AND status = APPROVED` (max 50)
   - Per ogni item: chiama engine, upsert `Entity` (increment frequency se esiste), create `ContentEntity`
   - `resultSummary`: `{processed, entitiesFound, errors}`
-- [ ] Next.js: `POST /api/projects/:id/analysis/extract` → crea `AnalysisJob` + enqueue
-- [ ] Audit: `ANALYSIS_EXTRACT_STARTED`, `ANALYSIS_EXTRACT_COMPLETED`
-- **Done when**: content items APPROVED hanno Entity estratte, ContentEntity presenti nel DB
+- [x] Next.js: `POST /api/projects/:id/analysis/extract` → crea `AnalysisJob` + enqueue
+- [x] `GET /api/projects/:id/analysis/status` → ultimo AnalysisJob del progetto
+- [x] Audit: `ANALYSIS_JOB_STARTED`, `ANALYSIS_JOB_COMPLETED`, `ANALYSIS_JOB_FAILED` in `lib/audit.ts`
+- **Done when**: content items APPROVED hanno Entity estratte, ContentEntity presenti nel DB ✅
 
 ### Step 3.2 — Embedding Generation
 - [ ] `agents/embedder.py`: `EmbedderAgent`

@@ -15,6 +15,10 @@ export const AUDIT_ACTIONS = {
   DISCOVERY_JOB_STARTED: "discovery.job.started",
   DISCOVERY_JOB_COMPLETED: "discovery.job.completed",
   DISCOVERY_JOB_FAILED: "discovery.job.failed",
+  // Analysis
+  ANALYSIS_JOB_STARTED: "analysis.job.started",
+  ANALYSIS_JOB_COMPLETED: "analysis.job.completed",
+  ANALYSIS_JOB_FAILED: "analysis.job.failed",
   // Content
   CONTENT_CREATED: "content.created",
   CONTENT_UPDATED: "content.updated",

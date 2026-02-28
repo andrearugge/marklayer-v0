@@ -21,10 +21,16 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { Prisma, SourcePlatform, ContentType } from "@prisma/client";
 
-// Worker only needs the queue name and types; `import type` is erased at runtime
-// so we avoid instantiating the Queue in this process.
-import { DISCOVERY_QUEUE_NAME } from "../lib/queue";
-import type { DiscoveryJobPayload, CrawlSitePayload, SearchPlatformPayload } from "../lib/queue";
+// Worker only needs the queue names and types; `import type` is erased at runtime
+// so we avoid instantiating the Queues in this process.
+import { DISCOVERY_QUEUE_NAME, ANALYSIS_QUEUE_NAME } from "../lib/queue";
+import type {
+  DiscoveryJobPayload,
+  CrawlSitePayload,
+  SearchPlatformPayload,
+  AnalysisJobPayload,
+  ExtractEntitiesPayload,
+} from "../lib/queue";
 
 // ─── Prisma (dedicated client for the worker process) ─────────────────────────
 
@@ -280,6 +286,142 @@ async function runSearch(payload: SearchPlatformPayload): Promise<SearchResult> 
   };
 }
 
+// ─── Analysis job helpers ─────────────────────────────────────────────────────
+
+async function safeUpdateAnalysisJob(
+  id: string,
+  data: Parameters<typeof prisma.analysisJob.update>[0]["data"]
+): Promise<void> {
+  try {
+    await prisma.analysisJob.update({ where: { id }, data });
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code !== "P2025") console.error("[worker] Analysis DB update failed:", err);
+  }
+}
+
+// ─── Engine types for extraction ──────────────────────────────────────────────
+
+interface EngineEntityItem {
+  label: string;
+  type: string;
+  salience: number;
+  context: string | null;
+}
+
+interface EngineExtractionResult {
+  id: string;
+  entities: EngineEntityItem[];
+  error: string | null;
+}
+
+interface EngineExtractResponse {
+  results: EngineExtractionResult[];
+}
+
+// ─── EXTRACT_ENTITIES handler ─────────────────────────────────────────────────
+
+interface ExtractResult {
+  processed: number;
+  entitiesFound: number;
+  errors: number;
+}
+
+async function runExtractEntities(
+  payload: ExtractEntitiesPayload
+): Promise<ExtractResult> {
+  const { projectId } = payload;
+
+  // Fetch APPROVED items with rawContent (max 50 per engine request)
+  const items = await prisma.contentItem.findMany({
+    where: { projectId, status: "APPROVED", rawContent: { not: null } },
+    select: { id: true, title: true, rawContent: true },
+    take: 50,
+  });
+
+  if (items.length === 0) {
+    return { processed: 0, entitiesFound: 0, errors: 0 };
+  }
+
+  const engineRes = await fetch(`${ENGINE_URL}/api/extract/entities`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-engine-api-key": ENGINE_API_KEY,
+    },
+    body: JSON.stringify({
+      items: items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        text: item.rawContent!,
+      })),
+    }),
+    signal: AbortSignal.timeout(600_000), // 10 min (sequential Haiku calls)
+  });
+
+  if (!engineRes.ok) {
+    const detail = await engineRes.json().catch(() => ({}));
+    throw new Error(
+      `Engine extract failed (${engineRes.status}): ${JSON.stringify(detail)}`
+    );
+  }
+
+  const data = (await engineRes.json()) as EngineExtractResponse;
+  let entitiesFound = 0;
+  let errors = 0;
+
+  for (const result of data.results) {
+    if (result.error) {
+      errors++;
+      continue;
+    }
+
+    for (const e of result.entities) {
+      const normalizedLabel = e.label.trim().toLowerCase();
+      if (!normalizedLabel) continue;
+
+      // Upsert Entity — increment frequency if already seen
+      const entity = await prisma.entity.upsert({
+        where: {
+          projectId_normalizedLabel_type: {
+            projectId,
+            normalizedLabel,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            type: e.type as any,
+          },
+        },
+        update: { frequency: { increment: 1 } },
+        create: {
+          projectId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          type: e.type as any,
+          label: e.label.trim(),
+          normalizedLabel,
+          frequency: 1,
+        },
+      });
+
+      // Upsert ContentEntity
+      await prisma.contentEntity.upsert({
+        where: {
+          contentId_entityId: { contentId: result.id, entityId: entity.id },
+        },
+        update: { salience: e.salience, context: e.context },
+        create: {
+          contentId: result.id,
+          entityId: entity.id,
+          salience: e.salience,
+          context: e.context,
+        },
+      });
+
+      entitiesFound++;
+    }
+  }
+
+  return { processed: items.length, entitiesFound, errors };
+}
+
 // ─── Redis connection ─────────────────────────────────────────────────────────
 
 const redisConnection = (() => {
@@ -408,11 +550,99 @@ worker.on("failed", (job, err) =>
 
 console.log(`[worker] Discovery worker started — queue: ${DISCOVERY_QUEUE_NAME}`);
 
+// ─── Analysis Worker ──────────────────────────────────────────────────────────
+
+const analysisWorker = new Worker<AnalysisJobPayload>(
+  ANALYSIS_QUEUE_NAME,
+  async (job) => {
+    const payload = job.data;
+    const { analysisJobId, projectId, userId } = payload;
+
+    console.log(
+      `[worker] Starting analysis job ${job.id} — type: ${payload.jobType}, analysisJobId: ${analysisJobId}`
+    );
+
+    await safeUpdateAnalysisJob(analysisJobId, {
+      status: "RUNNING",
+      startedAt: new Date(),
+    });
+    await logAudit("analysis.job.started", userId, projectId, {
+      jobType: payload.jobType,
+      analysisJobId,
+    });
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let resultSummary: Record<string, any>;
+
+      if (payload.jobType === "EXTRACT_ENTITIES") {
+        resultSummary = await runExtractEntities(payload);
+      } else {
+        throw new Error(`Unknown analysis job type: ${(payload as { jobType: string }).jobType}`);
+      }
+
+      await safeUpdateAnalysisJob(analysisJobId, {
+        status: "COMPLETED",
+        completedAt: new Date(),
+        resultSummary: resultSummary as Prisma.InputJsonValue,
+      });
+      await logAudit("analysis.job.completed", userId, projectId, {
+        jobType: payload.jobType,
+        analysisJobId,
+        ...resultSummary,
+      });
+
+      console.log(
+        `[worker] Analysis job ${job.id} completed:`,
+        JSON.stringify(resultSummary)
+      );
+    } catch (err) {
+      const isEngineDown =
+        err instanceof Error &&
+        (err.message.includes("fetch failed") ||
+          err.message.includes("ECONNREFUSED") ||
+          err.message.includes("Engine extract failed"));
+
+      const message = isEngineDown
+        ? `Engine non raggiungibile: ${err instanceof Error ? err.message : String(err)}`
+        : err instanceof Error
+        ? err.message
+        : String(err);
+
+      console.error(`[worker] Analysis job ${job.id} failed:`, message);
+
+      await safeUpdateAnalysisJob(analysisJobId, {
+        status: "FAILED",
+        completedAt: new Date(),
+        errorMessage: message,
+      });
+      await logAudit("analysis.job.failed", userId, projectId, {
+        jobType: payload.jobType,
+        analysisJobId,
+        error: message,
+      });
+
+      throw err;
+    }
+  },
+  { connection: redisConnection, concurrency: 1 }
+);
+
+analysisWorker.on("completed", (job) =>
+  console.log(`[worker] ✓ Analysis job ${job.id} done`)
+);
+analysisWorker.on("failed", (job, err) =>
+  console.error(`[worker] ✗ Analysis job ${job?.id} failed:`, err.message)
+);
+
+console.log(`[worker] Analysis worker started — queue: ${ANALYSIS_QUEUE_NAME}`);
+
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 
 async function shutdown() {
   console.log("[worker] Shutting down...");
   await worker.close();
+  await analysisWorker.close();
   await prisma.$disconnect();
   process.exit(0);
 }

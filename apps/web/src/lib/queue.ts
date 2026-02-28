@@ -49,6 +49,17 @@ export type DiscoveryJobPayload =
   | SearchPlatformPayload
   | FullDiscoveryPayload;
 
+// ─── Analysis job types ───────────────────────────────────────────────────────
+
+export type ExtractEntitiesPayload = {
+  jobType: "EXTRACT_ENTITIES";
+  projectId: string;
+  userId: string;
+  analysisJobId: string;
+};
+
+export type AnalysisJobPayload = ExtractEntitiesPayload; // extended in later steps
+
 // ─── Connection ───────────────────────────────────────────────────────────────
 
 function getRedisConnection() {
@@ -66,11 +77,23 @@ function getRedisConnection() {
   }
 }
 
-// ─── Queue ────────────────────────────────────────────────────────────────────
+// ─── Queues ───────────────────────────────────────────────────────────────────
 
 export const DISCOVERY_QUEUE_NAME = "discovery";
 
 export const discoveryQueue = new Queue<DiscoveryJobPayload>(DISCOVERY_QUEUE_NAME, {
+  connection: getRedisConnection(),
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: "exponential", delay: 10_000 },
+    removeOnComplete: { count: 200 },
+    removeOnFail: { count: 100 },
+  },
+});
+
+export const ANALYSIS_QUEUE_NAME = "analysis";
+
+export const analysisQueue = new Queue<AnalysisJobPayload>(ANALYSIS_QUEUE_NAME, {
   connection: getRedisConnection(),
   defaultJobOptions: {
     attempts: 2,
