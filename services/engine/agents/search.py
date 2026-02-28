@@ -1,9 +1,9 @@
 """
 Platform Search Agent
 
-Uses the Google Custom Search JSON API to find brand/author mentions
-across specific platforms. One query per platform, results deduplicated
-by URL before being returned to the caller.
+Uses the Brave Search API to find brand/author mentions across specific
+platforms. One query per platform, results deduplicated by URL before
+being returned to the caller.
 """
 
 import asyncio
@@ -13,18 +13,17 @@ import httpx
 
 from config import settings
 
-# ─── Google CSE endpoint ──────────────────────────────────────────────────────
+# ─── Brave Search endpoint ────────────────────────────────────────────────────
 
-_CSE_URL = "https://www.googleapis.com/customsearch/v1"
+_BRAVE_URL = "https://api.search.brave.com/res/v1/web/search"
 
 # ─── Per-platform query builders ──────────────────────────────────────────────
 
 
 def build_query(platform: str, brand: str, domain: str | None) -> str | None:
     """
-    Return the Google search query for a given platform, or None if the
-    platform cannot be searched without a required field (e.g. WEBSITE without
-    a domain).
+    Return the search query for a given platform, or None if the platform
+    cannot be searched without a required field (e.g. WEBSITE without a domain).
     """
     b = brand.replace('"', "")  # sanitise brand for use inside quotes
 
@@ -36,7 +35,7 @@ def build_query(platform: str, brand: str, domain: str | None) -> str | None:
     if platform == "NEWS":
         # External mentions — exclude own domain if provided
         exclusion = f" -site:{domain}" if domain else ""
-        return f'"{b}" (news OR articolo OR intervista OR press){exclusion}'
+        return f'"{b}" (news OR article OR interview OR press){exclusion}'
 
     _TEMPLATES: dict[str, str] = {
         "SUBSTACK": f'site:substack.com "{b}"',
@@ -74,14 +73,15 @@ class PlatformSearchResult:
 
 class SearchAgent:
     """
-    Queries the Google Custom Search JSON API for each requested platform.
+    Queries the Brave Search API for each requested platform.
 
-    Requires GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID to be set in config.
-    Applies a 1-second pause between API calls to stay within quota.
+    Requires BRAVE_SEARCH_API_KEY to be set in config.
+    Applies a 1-second pause between API calls to stay within rate limits.
+    Brave supports up to 20 results per request (vs Google CSE's 10).
     """
 
     def is_configured(self) -> bool:
-        return bool(settings.google_cse_api_key and settings.google_cse_id)
+        return bool(settings.brave_search_api_key)
 
     async def search(
         self,
@@ -93,8 +93,8 @@ class SearchAgent:
         result = PlatformSearchResult()
         seen_urls: set[str] = set()
 
-        # Clamp to Google CSE maximum (10 per request)
-        num = max(1, min(max_results_per_platform, 10))
+        # Brave supports up to 20 results per request
+        count = max(1, min(max_results_per_platform, 20))
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             for i, platform in enumerate(platforms):
@@ -112,14 +112,14 @@ class SearchAgent:
                 if i > 0:
                     await asyncio.sleep(1.0)
 
-                items, error = await self._call_cse(client, query, num)
+                items, error = await self._call_brave(client, query, count)
 
                 if error:
                     result.errors.append({"platform": platform, "error": error})
                     continue
 
                 for item in items:
-                    url = item.get("link", "").strip()
+                    url = item.get("url", "").strip()
                     if not url or url in seen_urls:
                         continue
                     seen_urls.add(url)
@@ -127,7 +127,7 @@ class SearchAgent:
                         SearchResult(
                             url=url,
                             title=item.get("title", url).strip(),
-                            snippet=item.get("snippet", "").strip() or None,
+                            snippet=item.get("description", "").strip() or None,
                             platform=platform,
                         )
                     )
@@ -135,38 +135,40 @@ class SearchAgent:
 
         return result
 
-    async def _call_cse(
+    async def _call_brave(
         self,
         client: httpx.AsyncClient,
         query: str,
-        num: int,
+        count: int,
     ) -> tuple[list[dict], str | None]:
         """
-        Call the Google CSE API. Returns (items, error_message).
-        items is the raw list from response["items"].
+        Call the Brave Search API. Returns (items, error_message).
+        items is the raw list from response["web"]["results"].
         """
-        params = {
-            "key": settings.google_cse_api_key,
-            "cx": settings.google_cse_id,
-            "q": query,
-            "num": num,
-        }
-
         try:
-            resp = await client.get(_CSE_URL, params=params)
+            resp = await client.get(
+                _BRAVE_URL,
+                params={"q": query, "count": count},
+                headers={
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip",
+                    "X-Subscription-Token": settings.brave_search_api_key,
+                },
+            )
         except httpx.RequestError as exc:
             return [], str(exc)
 
         if resp.status_code == 429:
-            return [], "Google CSE daily quota exceeded"
-        if resp.status_code == 400:
-            return [], "Bad request — check GOOGLE_CSE_ID"
-        if resp.status_code == 403:
-            return [], "Forbidden — check GOOGLE_CSE_API_KEY or quota"
+            return [], "Brave Search rate limit exceeded"
+        if resp.status_code == 401:
+            return [], "Unauthorized — check BRAVE_SEARCH_API_KEY"
+        if resp.status_code == 422:
+            return [], "Unprocessable query"
         if resp.status_code != 200:
             return [], f"HTTP {resp.status_code}"
 
         data: dict = resp.json()
 
-        # "items" is absent when there are no results (not an error)
-        return data.get("items", []), None
+        # "web" key is absent when there are no results (not an error)
+        web = data.get("web", {})
+        return web.get("results", []), None

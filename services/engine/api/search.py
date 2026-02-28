@@ -89,8 +89,8 @@ async def search_platform(req: SearchPlatformRequest) -> SearchPlatformResponse:
         raise HTTPException(
             status_code=503,
             detail=(
-                "Google Custom Search not configured. "
-                "Set GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID environment variables."
+                "Brave Search not configured. "
+                "Set BRAVE_SEARCH_API_KEY environment variable."
             ),
         )
 
