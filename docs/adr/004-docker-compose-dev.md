@@ -22,7 +22,7 @@ services:
     image: pgvector/pgvector:pg16
     ports: ["5432:5432"]
     environment:
-      POSTGRES_DB: ai_visibility_platform
+      POSTGRES_DB: visiblee
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     volumes:

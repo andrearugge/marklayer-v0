@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Visibility Platform",
-  description: "Monitor and optimize your AI visibility across platforms",
+  title: "Visiblee",
+  description: "Monitor and optimize your visibility across platforms",
 };
 
 export default function RootLayout({

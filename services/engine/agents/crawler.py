@@ -17,8 +17,8 @@ from bs4 import BeautifulSoup, Tag
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 USER_AGENT = (
-    "MarklayerBot/1.0 (AI Visibility Platform; content discovery; "
-    "contact: bot@marklayer.com)"
+    "VisibleeBot/1.0 (Visiblee; content discovery; "
+    "contact: bot@visiblee.com)"
 )
 
 # Tags whose entire subtree is noise

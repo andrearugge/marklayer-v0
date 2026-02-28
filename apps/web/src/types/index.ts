@@ -1,4 +1,4 @@
-// Shared TypeScript types for the AI Visibility Platform
+// Shared TypeScript types for Visiblee
 
 export type UserRole = "user" | "admin";
 

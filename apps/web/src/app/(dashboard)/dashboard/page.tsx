@@ -4,7 +4,7 @@ export default function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">
-          Benvenuto nella tua AI Visibility Platform.
+          Benvenuto in Visiblee.
         </p>
       </div>
       <div className="rounded-lg border border-dashed p-12 text-center">

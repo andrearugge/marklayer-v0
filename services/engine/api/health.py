@@ -19,7 +19,7 @@ class HealthResponse(BaseModel):
 async def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
-        service="marklayer-engine",
+        service="visiblee-engine",
         version="0.1.0",
         uptime_seconds=round(time.time() - _START_TIME, 1),
     )

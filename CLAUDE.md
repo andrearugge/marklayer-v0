@@ -1,4 +1,4 @@
-# CLAUDE.md — AI Visibility Platform
+# CLAUDE.md — Visiblee
 
 ## Stato Corrente
 

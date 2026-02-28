@@ -103,7 +103,7 @@ async function main() {
     },
     {
       url: null,
-      title: "Il futuro dell'AI Visibility per i brand italiani",
+      title: "Il futuro della visibilità AI per i brand italiani",
       sourcePlatform: "LINKEDIN" as const,
       contentType: "SOCIAL_POST" as const,
       discoveryMethod: "MANUAL" as const,

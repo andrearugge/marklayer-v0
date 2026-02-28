@@ -7,8 +7,8 @@ from api.search import router as search_router
 from config import settings
 
 app = FastAPI(
-    title="Marklayer Engine",
-    description="AI Visibility Platform — Content Discovery & Analysis Service",
+    title="Visiblee Engine",
+    description="Visiblee — Content Discovery & Analysis Service",
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",

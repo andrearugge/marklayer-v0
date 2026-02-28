@@ -1,25 +1,25 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: marklayer_postgres
+    container_name: visiblee_postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ai_visibility_platform
+      POSTGRES_DB: visiblee
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_visibility_platform"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d visiblee"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: marklayer_redis
+    container_name: visiblee_redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -35,12 +35,12 @@ services:
     build:
       context: ./services/engine
       dockerfile: Dockerfile
-    container_name: marklayer_engine
+    container_name: visiblee_engine
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/ai_visibility_platform"
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/visiblee"
       REDIS_URL: "redis://redis:6379"
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ENGINE_API_KEY: ${ENGINE_API_KEY:-changeme-in-production}

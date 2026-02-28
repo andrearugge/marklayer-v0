@@ -19,7 +19,7 @@ export function Sidebar({ projectCount }: { projectCount?: number }) {
       <div className="flex h-14 items-center border-b px-4">
         <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
           <span className="text-primary">◆</span>
-          <span>AI Visibility</span>
+          <span>Visiblee</span>
         </Link>
       </div>
 

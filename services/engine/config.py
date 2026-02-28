@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # Database
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/ai_visibility_platform"
+    database_url: str = "postgresql://postgres:postgres@localhost:5432/visiblee"
 
     # Redis
     redis_url: str = "redis://localhost:6379"

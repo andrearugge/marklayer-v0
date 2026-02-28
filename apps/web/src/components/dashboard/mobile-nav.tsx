@@ -36,7 +36,7 @@ export function MobileNav({ projectCount }: { projectCount?: number }) {
               onClick={() => setOpen(false)}
             >
               <span className="text-primary">◆</span>
-              <span>AI Visibility</span>
+              <span>Visiblee</span>
             </Link>
           </SheetTitle>
         </SheetHeader>
