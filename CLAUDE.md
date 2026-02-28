@@ -3,8 +3,8 @@
 ## Stato Corrente
 
 **Fase**: 3 — Knowledge Graph & Analysis
-**Step corrente**: 3.6 completato — Fase 3 completata
-**Ultimo commit**: feat(step-3.6): FULL_ANALYSIS orchestration, project_id index, Phase 3 polish
+**Step corrente**: Fase 4 completata
+**Ultimo commit**: feat(phase-4): dashboard, content inventory, knowledge graph
 **Aggiornato**: 2026-02-28
 
 ---
@@ -460,12 +460,18 @@ COMPUTE_SCORE       → calcolo score + suggestions LLM
 
 ## Fasi Future (Overview)
 
-| Fase | Contenuto |
-|------|-----------|
-| 3 | Knowledge Graph: entity extraction, topic clustering, embeddings (pgvector), AI Readiness scoring |
-| 4 | Dashboard: graph visualization (react-force-graph), gap analysis, competitor benchmark |
-| 5 | Content Generation Agent: suggestions, pipeline, platform recommendations |
-| 6 | Polish & Launch: onboarding, landing page, Stripe billing, E2E tests |
+| Fase | Contenuto | Stato |
+|------|-----------|-------|
+| 3 | Knowledge Graph: entity extraction, topic clustering, embeddings (pgvector), AI Readiness scoring | ✅ |
+| 4 | Dashboard, content inventory, knowledge graph visualization | ✅ |
+| 5 | Content Generation Agent: suggestions, pipeline, platform recommendations | — |
+| 6 | Polish & Launch: onboarding, landing page, Stripe billing, E2E tests | — |
+
+### Fase 4 — completata
+
+- `/dashboard`: KPI strip (progetti attivi, contenuti, approvati, score AI medio), tabella progetti con score badge e isStale, breakdown status contenuti con barra visiva, ultime 5 analisi completate
+- `/content`: content inventory cross-progetto — filtri (progetto, status, piattaforma, tipo, ricerca testo), tabella paginata 25/pagina con link a detail e progetto
+- `/graph`: knowledge graph interattivo (`react-force-graph-2d`) — nodi = entità per tipo colorato, dimensione per frequenza; archi = co-occorrenza in content items (raw SQL); selector progetto, legenda, tooltip hover
 
 ---
 
