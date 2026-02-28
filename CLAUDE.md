@@ -3,8 +3,8 @@
 ## Stato Corrente
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2b.2 completato → prossimo: **2b.3 Content Fetching & Extraction**
-**Ultimo commit**: refactor(step-2b.2): switch platform search from Google CSE to Brave Search API
+**Step corrente**: 2b.3 completato → prossimo: **2b.4 Discovery Job Orchestration**
+**Ultimo commit**: feat(step-2b.3): content fetching & extraction agent
 **Aggiornato**: 2026-02-28
 
 ---
@@ -90,16 +90,12 @@ Query: `site:platform.com "{brand}"` per tutte le piattaforme; max 20 risultati/
 Next.js: `POST /api/projects/:id/discovery/search` → mappa platform → `SourcePlatform` + `ContentType`.
 > Google CSE scartato: 403 persistente nonostante configurazione corretta (org policy `beconcept.studio`).
 
-#### Step 2b.3 — Content Fetching & Extraction ← PROSSIMO
-- [ ] Endpoint `POST /api/crawl/extract` — riceve URL, restituisce contenuto pulito
-- [ ] BeautifulSoup per siti statici; Playwright per SPA se necessario
-- [ ] Heuristic estrazione corpo principale (article body)
-- [ ] Calcolo `wordCount`, `excerpt`, `contentHash` dopo estrazione
-- [ ] Batch processing N contenuti in parallelo
-- [ ] Update `ContentItem.rawContent` estratto
-- **Done when**: ContentItem scoperti via search hanno `rawContent` estratto e metadata calcolati
+#### ✅ Step 2b.3 — Content Fetching & Extraction
+`agents/crawler.py`: `ExtractResult` + `extract_urls()` — batch async con `asyncio.Semaphore`, riusa `_extract_page_data`.
+`api/crawl.py`: `POST /api/crawl/extract` — fino a 50 URL/request, errori isolati per URL.
+Next.js: `POST /api/projects/:id/content/fetch` — trova items con URL ma senza `rawContent`, chiama engine in batch da 20, aggiorna `rawContent`/`wordCount`/`excerpt`/`lastCrawledAt`/`publishedAt`.
 
-#### Step 2b.4 — Discovery Job Orchestration
+#### Step 2b.4 — Discovery Job Orchestration ← PROSSIMO
 - [ ] BullMQ job queue: tipi `CRAWL_SITE`, `SEARCH_PLATFORM`, `FULL_DISCOVERY`
 - [ ] Tracking in tabella `DiscoveryJob`
 - [ ] API Next.js: `POST .../discovery/start`, `GET .../status`, `GET .../history`
