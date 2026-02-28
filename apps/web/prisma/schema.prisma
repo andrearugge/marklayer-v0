@@ -162,6 +162,27 @@ enum JobStatus {
   CANCELLED
 }
 
+// ─── Knowledge Graph enums ────────────────────────────────────────────────────
+
+enum EntityType {
+  BRAND
+  PERSON
+  ORGANIZATION
+  TOPIC
+  PRODUCT
+  LOCATION
+  CONCEPT
+  OTHER
+}
+
+enum AnalysisJobType {
+  FULL_ANALYSIS
+  EXTRACT_ENTITIES
+  GENERATE_EMBEDDINGS
+  CLUSTER_TOPICS
+  COMPUTE_SCORE
+}
+
 // ─── Phase 2 models ───────────────────────────────────────────────────────────
 
 model Project {
@@ -177,6 +198,9 @@ model Project {
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   contentItems  ContentItem[]
   discoveryJobs DiscoveryJob[]
+  entities      Entity[]
+  score         ProjectScore?
+  analysisJobs  AnalysisJob[]
 
   @@index([userId])
   @@map("projects")
@@ -202,7 +226,9 @@ model ContentItem {
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  embedding       Unsupported("vector(384)")?
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contentEntities ContentEntity[]
 
   @@unique([projectId, contentHash])
   @@index([projectId, sourcePlatform])
@@ -227,4 +253,91 @@ model DiscoveryJob {
 
   @@index([projectId, status])
   @@map("discovery_jobs")
+}
+
+// ─── Phase 3 models ───────────────────────────────────────────────────────────
+
+model Entity {
+  id              String     @id @default(uuid())
+  projectId       String     @map("project_id")
+  type            EntityType
+  label           String     @db.VarChar(255)
+  normalizedLabel String     @map("normalized_label") @db.VarChar(255)
+  frequency       Int        @default(1)
+  metadata        Json?      @db.JsonB
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contentEntities ContentEntity[]
+  sourceRelations EntityRelation[] @relation("SourceEntity")
+  targetRelations EntityRelation[] @relation("TargetEntity")
+
+  @@unique([projectId, normalizedLabel, type])
+  @@index([projectId, type])
+  @@map("entities")
+}
+
+model ContentEntity {
+  contentId String  @map("content_id")
+  entityId  String  @map("entity_id")
+  salience  Float   @default(0.5)
+  context   String? @db.Text
+
+  content ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  entity  Entity      @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, entityId])
+  @@map("content_entities")
+}
+
+model EntityRelation {
+  id           String   @id @default(uuid())
+  projectId    String   @map("project_id")
+  sourceId     String   @map("source_id")
+  targetId     String   @map("target_id")
+  relationType String   @map("relation_type") @db.VarChar(100)
+  weight       Float    @default(1.0)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  source Entity @relation("SourceEntity", fields: [sourceId], references: [id], onDelete: Cascade)
+  target Entity @relation("TargetEntity", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, targetId, relationType])
+  @@index([projectId])
+  @@map("entity_relations")
+}
+
+model ProjectScore {
+  id           String   @id @default(uuid())
+  projectId    String   @unique @map("project_id")
+  overallScore Float    @map("overall_score")
+  dimensions   Json     @db.JsonB
+  suggestions  Json?    @db.JsonB
+  contentCount Int      @map("content_count")
+  isStale      Boolean  @default(false) @map("is_stale")
+  computedAt   DateTime @map("computed_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("project_scores")
+}
+
+model AnalysisJob {
+  id            String          @id @default(uuid())
+  projectId     String          @map("project_id")
+  jobType       AnalysisJobType
+  status        JobStatus       @default(PENDING)
+  resultSummary Json?           @map("result_summary") @db.JsonB
+  startedAt     DateTime?       @map("started_at")
+  completedAt   DateTime?       @map("completed_at")
+  errorMessage  String?         @map("error_message") @db.Text
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
+  @@map("analysis_jobs")
 }
