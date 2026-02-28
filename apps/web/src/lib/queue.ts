@@ -86,12 +86,20 @@ export type FullAnalysisPayload = {
   analysisJobId: string;
 };
 
+export type GenerateContentSuggestionsPayload = {
+  jobType: "GENERATE_CONTENT_SUGGESTIONS";
+  projectId: string;
+  userId: string;
+  analysisJobId: string;
+};
+
 export type AnalysisJobPayload =
   | ExtractEntitiesPayload
   | GenerateEmbeddingsPayload
   | ClusterTopicsPayload
   | ComputeScorePayload
-  | FullAnalysisPayload;
+  | FullAnalysisPayload
+  | GenerateContentSuggestionsPayload;
 
 // ─── Connection ───────────────────────────────────────────────────────────────
 

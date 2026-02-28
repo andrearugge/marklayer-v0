@@ -181,6 +181,7 @@ enum AnalysisJobType {
   GENERATE_EMBEDDINGS
   CLUSTER_TOPICS
   COMPUTE_SCORE
+  GENERATE_CONTENT_SUGGESTIONS
 }
 
 // ─── Phase 2 models ───────────────────────────────────────────────────────────
@@ -195,12 +196,13 @@ model Project {
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  contentItems  ContentItem[]
-  discoveryJobs DiscoveryJob[]
-  entities      Entity[]
-  score         ProjectScore?
-  analysisJobs  AnalysisJob[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentItems       ContentItem[]
+  discoveryJobs      DiscoveryJob[]
+  entities           Entity[]
+  score              ProjectScore?
+  analysisJobs       AnalysisJob[]
+  contentSuggestions ContentSuggestion[]
 
   @@index([userId])
   @@map("projects")
@@ -229,6 +231,7 @@ model ContentItem {
   embedding       Unsupported("vector(384)")?
   project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   contentEntities ContentEntity[]
+  suggestion      ContentSuggestion?
 
   @@unique([projectId, contentHash])
   @@index([projectId])
@@ -341,4 +344,22 @@ model AnalysisJob {
 
   @@index([projectId, status])
   @@map("analysis_jobs")
+}
+
+// ─── Phase 5 models ───────────────────────────────────────────────────────────
+
+model ContentSuggestion {
+  id          String   @id @default(uuid())
+  contentId   String   @unique @map("content_id")
+  projectId   String   @map("project_id")
+  suggestions Json     @db.JsonB
+  generatedAt DateTime @map("generated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  content ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  project Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("content_suggestions")
 }

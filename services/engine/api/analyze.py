@@ -135,6 +135,92 @@ async def generate_suggestions(
     return SuggestionsResponse(suggestions=[])
 
 
+# ─── Content-suggestion models ───────────────────────────────────────────────
+
+
+class ContentSuggestionRequest(BaseModel):
+    id: str
+    title: str
+    text: str
+    entities: list[str]
+    project_name: str
+
+
+class ContentSuggestionResponse(BaseModel):
+    id: str
+    suggestions: list[str]
+
+
+# ─── Content-suggestion endpoint ──────────────────────────────────────────────
+
+
+@router.post("/content-suggestion", response_model=ContentSuggestionResponse)
+async def generate_content_suggestion(
+    body: ContentSuggestionRequest,
+    _: None = Depends(verify_api_key),
+) -> ContentSuggestionResponse:
+    """
+    Generate 3-5 concrete Italian improvement suggestions for a single content item
+    using Claude Haiku.  Falls back to an empty list on error.
+    """
+    if not settings.anthropic_api_key:
+        return ContentSuggestionResponse(id=body.id, suggestions=[])
+
+    entities_str = (
+        ", ".join(body.entities[:10]) if body.entities else "nessuna entità rilevata"
+    )
+    # Truncate body text to keep prompt within token budget
+    truncated_text = body.text[:3000] if body.text else ""
+
+    prompt = (
+        f"Progetto: {body.project_name}\n"
+        f"Titolo contenuto: {body.title}\n"
+        f"Entità menzionate: {entities_str}\n\n"
+        f"Testo (estratto):\n{truncated_text}\n\n"
+        "Analizza questo contenuto e genera da 3 a 5 suggerimenti concreti e "
+        "pratici in italiano per migliorarlo e aumentarne la visibilità nei sistemi "
+        "AI. Ogni suggerimento deve essere una singola frase breve, direttamente "
+        "actionable (es. 'Aggiungi una sezione dedicata a X', 'Espandi il paragrafo "
+        "su Y con esempi concreti'). Rispondi con una lista numerata, nient'altro."
+    )
+
+    client: anthropic.AsyncAnthropic | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            if client is None:
+                client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+            response = await client.messages.create(
+                model=_MODEL,
+                max_tokens=512,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response.content[0].text.strip()
+            import re
+
+            suggestions: list[str] = []
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                cleaned = re.sub(r"^[\d]+[.)]\s*|^[-•]\s*", "", line).strip()
+                if cleaned:
+                    suggestions.append(cleaned)
+            return ContentSuggestionResponse(
+                id=body.id, suggestions=suggestions[:5]
+            )
+        except anthropic.RateLimitError:
+            import asyncio
+
+            if attempt < _MAX_RETRIES - 1:
+                await asyncio.sleep(2**attempt)
+                continue
+        except Exception as exc:
+            logger.warning("Content suggestion generation failed: %s", exc)
+            break
+
+    return ContentSuggestionResponse(id=body.id, suggestions=[])
+
+
 # ─── Cluster topics models ────────────────────────────────────────────────────
 
 

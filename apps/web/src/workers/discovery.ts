@@ -35,6 +35,7 @@ import type {
   ClusterTopicsPayload,
   ComputeScorePayload,
   FullAnalysisPayload,
+  GenerateContentSuggestionsPayload,
 } from "../lib/queue";
 import { computeScoreDimensions } from "../lib/scoring";
 import { generateSuggestions } from "../lib/suggestions";
@@ -709,6 +710,133 @@ async function runComputeScore(payload: ComputeScorePayload): Promise<ComputeSco
   };
 }
 
+// ─── GENERATE_CONTENT_SUGGESTIONS handler ─────────────────────────────────────
+
+interface ContentSuggestionResult {
+  processed: number;
+  skipped: number;
+  errors: number;
+}
+
+const SUGGESTIONS_BATCH_SIZE = 50;
+const SUGGESTIONS_MAX_AGE_DAYS = 7;
+
+async function runGenerateContentSuggestions(
+  payload: GenerateContentSuggestionsPayload
+): Promise<ContentSuggestionResult> {
+  const { projectId } = payload;
+
+  // Fetch project name for prompt context
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { name: true },
+  });
+  const projectName = project?.name ?? "Progetto";
+
+  // Fetch APPROVED items with rawContent that either have no suggestion or
+  // whose suggestion is older than SUGGESTIONS_MAX_AGE_DAYS
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - SUGGESTIONS_MAX_AGE_DAYS);
+
+  const itemsRaw = await prisma.$queryRawUnsafe<
+    { id: string; title: string; rawContent: string }[]
+  >(
+    `SELECT ci.id, ci.title, ci."rawContent"
+     FROM content_items ci
+     LEFT JOIN content_suggestions cs ON cs.content_id = ci.id
+     WHERE ci.project_id = $1
+       AND ci.status = 'APPROVED'
+       AND ci."rawContent" IS NOT NULL
+       AND (cs.id IS NULL OR cs.generated_at < $2)
+     ORDER BY ci.created_at DESC
+     LIMIT $3`,
+    projectId,
+    cutoff,
+    SUGGESTIONS_BATCH_SIZE
+  );
+
+  if (itemsRaw.length === 0) {
+    return { processed: 0, skipped: 0, errors: 0 };
+  }
+
+  // Fetch entity labels per content item for richer prompt context
+  const contentIds = itemsRaw.map((r) => r.id);
+  const entityRows = await prisma.contentEntity.findMany({
+    where: { contentId: { in: contentIds } },
+    include: { entity: { select: { label: true } } },
+    orderBy: { salience: "desc" },
+  });
+  const entitiesByContent: Record<string, string[]> = {};
+  for (const row of entityRows) {
+    if (!entitiesByContent[row.contentId]) entitiesByContent[row.contentId] = [];
+    entitiesByContent[row.contentId].push(row.entity.label);
+  }
+
+  let processed = 0;
+  let errors = 0;
+
+  for (const item of itemsRaw) {
+    try {
+      const entities = (entitiesByContent[item.id] ?? []).slice(0, 10);
+
+      const engineRes = await fetch(`${ENGINE_URL}/api/analyze/content-suggestion`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-engine-api-key": ENGINE_API_KEY,
+        },
+        body: JSON.stringify({
+          id: item.id,
+          title: item.title,
+          text: (item.rawContent ?? "").slice(0, 3000),
+          entities,
+          project_name: projectName,
+        }),
+        signal: AbortSignal.timeout(30_000), // 30s per item
+      });
+
+      if (!engineRes.ok) {
+        console.warn(`[worker] Content suggestion failed for ${item.id}: HTTP ${engineRes.status}`);
+        errors++;
+        continue;
+      }
+
+      const data = (await engineRes.json()) as { id: string; suggestions: string[] };
+
+      if (data.suggestions.length === 0) {
+        errors++;
+        continue;
+      }
+
+      const now = new Date();
+      await prisma.contentSuggestion.upsert({
+        where: { contentId: item.id },
+        update: {
+          suggestions: data.suggestions,
+          generatedAt: now,
+          updatedAt: now,
+        },
+        create: {
+          contentId: item.id,
+          projectId,
+          suggestions: data.suggestions,
+          generatedAt: now,
+        },
+      });
+
+      processed++;
+    } catch (err) {
+      console.warn(
+        `[worker] Content suggestion error for ${item.id}:`,
+        err instanceof Error ? err.message : String(err)
+      );
+      errors++;
+    }
+  }
+
+  return { processed, skipped: itemsRaw.length - processed - errors, errors };
+}
+
 // ─── FULL_ANALYSIS handler ────────────────────────────────────────────────────
 
 const MIN_EMBEDDINGS_FOR_CLUSTER = 6;
@@ -931,6 +1059,8 @@ const analysisWorker = new Worker<AnalysisJobPayload>(
         resultSummary = await runComputeScore(payload);
       } else if (payload.jobType === "FULL_ANALYSIS") {
         resultSummary = await runFullAnalysis(payload);
+      } else if (payload.jobType === "GENERATE_CONTENT_SUGGESTIONS") {
+        resultSummary = await runGenerateContentSuggestions(payload);
       } else {
         throw new Error(`Unknown analysis job type: ${(payload as { jobType: string }).jobType}`);
       }

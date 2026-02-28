@@ -28,6 +28,7 @@ import { TopicsPanel } from "./topics-panel";
 import { ContentHealthCard } from "./content-health-card";
 import { GapAnalysisCard } from "./gap-analysis-card";
 import type { GapAnalysisData } from "./gap-analysis-card";
+import { GenerateSuggestionsButton } from "./generate-suggestions-button";
 import type { SerializedDiscoveryJob } from "./discovery-job-status";
 import type { DiscoveredItem } from "./discovery-review";
 import type { SerializedAnalysisJob } from "./analysis-job-status";
@@ -780,6 +781,13 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
 
           {/* Gap analysis */}
           <GapAnalysisCard data={gapData} />
+
+          {/* Batch suggestions trigger */}
+          {totalCount > 0 && (
+            <div className="flex justify-end">
+              <GenerateSuggestionsButton projectId={id} />
+            </div>
+          )}
 
           <EntitiesPanel
             projectId={id}

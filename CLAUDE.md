@@ -2,9 +2,9 @@
 
 ## Stato Corrente
 
-**Fase**: 3 — Knowledge Graph & Analysis
-**Step corrente**: Fase 4 completata
-**Ultimo commit**: feat(phase-4): dashboard, content inventory, knowledge graph
+**Fase**: 5 — Content Generation Agent
+**Step corrente**: 5.1 completato
+**Ultimo commit**: feat(step-5.1): per-content AI suggestions — engine endpoint, BullMQ batch, inline API, UI card
 **Aggiornato**: 2026-02-28
 
 ---
@@ -464,8 +464,275 @@ COMPUTE_SCORE       → calcolo score + suggestions LLM
 |------|-----------|-------|
 | 3 | Knowledge Graph: entity extraction, topic clustering, embeddings (pgvector), AI Readiness scoring | ✅ |
 | 4 | Dashboard, content inventory, knowledge graph visualization | ✅ |
-| 5 | Content Generation Agent: suggestions, pipeline, platform recommendations | — |
+| 5 | Content Generation Agent: gap analysis, suggestions, pipeline, platform recommendations | 🔄 |
 | 6 | Polish & Launch: onboarding, landing page, Stripe billing, E2E tests | — |
+
+### Fase 5 — Content Generation Agent
+
+#### ✅ Step 5.0 — Content Gap Analysis
+`gap-analysis-card.tsx`: card nel tab Analisi con gap derivati dai dati esistenti — piattaforme mancanti/deboli, topic cluster con < 3 contenuti, entità con coverage < 25% dei contenuti approvati, freshness (contenuti > 6/12 mesi). Severity critical/warning per ciascun gap. Nessuna query LLM — 100% dati DB.
+**Build OK (41 route).**
+
+---
+
+# Piano Dettagliato — Fase 5: Content Generation Agent
+
+## Decisioni Architetturali Fase 5
+
+### ADR-012: Per-item Suggestions — on demand + cache DB
+- **Problema**: le suggestions di `ScoreCard` sono a livello progetto (troppo generiche); gli utenti vogliono sapere *cosa migliorare in un contenuto specifico*
+- **Decisione**: per ogni `ContentItem` APPROVED con `rawContent`, generare 3-5 suggerimenti concreti via Claude Haiku; storarli in `ContentSuggestion` (upsert) per evitare ri-generazioni costose
+- **On demand**: trigger esplicito dall'utente (bottone in content detail) oppure batch da Analysis tab
+- **Cache**: se `ContentSuggestion` esiste con `generatedAt` recente e `rawContent` non è cambiato → mostrare cached; bottone "Rigenera" per refresh manuale
+- **Formato suggestion**: stringa plain text, 1-2 frasi, orientata all'azione ("Aggiungi una sezione su X", "Espandi il paragrafo Y con esempi concreti")
+- **Alternativa scartata**: generazione inline al page load (troppo lento, costoso ad ogni visita)
+
+### ADR-013: Content Brief — struttura e modello
+- **Problema**: il gap analysis mostra *dove* mancano contenuti ma non *cosa scrivere*; gli utenti hanno bisogno di una guida concreta
+- **Decisione**: per ogni gap critico/warning, generare un "brief" strutturato via Claude Haiku — guida alla scrittura con titolo proposto, piattaforma target, 5 key points, entità da menzionare, word count target
+- **Modello**: `claude-haiku-4-5-20251001` — output JSON via tool use (~$0.001/brief)
+- **Input al modello**: tipo gap (PLATFORM/TOPIC/ENTITY/FRESHNESS), label gap, top-5 entità progetto, 3 titoli di contenuto esistenti come reference di stile, nome progetto
+- **Dedup**: se esiste già un brief per stesso `(projectId, gapType, gapLabel)` non REJECTED, skip
+- **Status workflow**: `PENDING → ACCEPTED | REJECTED → DONE` (segnala che il contenuto è stato creato)
+- **Trigger**: manuale (bottone "Genera Brief" nel gap analysis), non automatico
+
+### ADR-014: Semantic Search — pgvector + query embedding
+- **Problema**: gli utenti vogliono sapere "quanto bene è coperto questo topic?" oppure trovare contenuti simili — full-text search non basta per query concettuali
+- **Decisione**: l'engine incorpora la query con lo stesso modello MiniLM-L12-v2 → Next.js fa la cosine distance search via pgvector `<=>` operator
+- **Soglia pertinenza**: cosine distance < 0.7 (similarity > 0.3); < 3 risultati → segnala "topic non ben coperto"
+- **Flusso**: client → Next.js API → engine `POST /api/embed/query` (embedding query) → Next.js `$queryRaw` pgvector → risultati filtrati per projectId
+- **Motivo split**: engine genera l'embedding (modello ONNX residente in Python), Next.js fa la query DB (già connesso a PostgreSQL con pgvector)
+- **Alternativa scartata**: full-text search `tsvector` — meno efficace per query concettuali e sinonimiche
+
+### ADR-015: Chat Agent — stateless + streaming SSE
+- **Problema**: gli utenti hanno domande strategiche sul loro content portfolio che il dashboard non può rispondere con metriche statiche
+- **Decisione**: chat stateless (nessuna persistenza DB dei messaggi — troppo overhead per MVP); ogni messaggio porta context iniettato via system prompt
+- **Contesto iniettato**: nome progetto, score + dimensioni, top-10 entità per frequenza, ultimi 3 gap critici, top-3 content items rilevanti alla query (RAG via semantic search)
+- **Streaming**: engine usa Anthropic SDK con `stream=True` → SSE; Next.js fa proxy con `TransformStream` → client `ReadableStream`
+- **Modello**: `claude-haiku-4-5-20251001` default; configurabile via env `CHAT_MODEL=claude-sonnet-4-6`
+- **Limite documentato nell'UI**: "La conversazione non viene salvata tra sessioni"
+- **Alternativa scartata**: LangChain/CrewAI — overhead eccessivo, dependency hell, per MVP non necessario
+
+---
+
+## Schema Database — Fase 5
+
+```prisma
+// Step 5.1 — Suggestions per content item
+model ContentSuggestion {
+  id          String   @id @default(uuid())
+  contentId   String   @unique @map("content_id")   // una suggestion record per item
+  projectId   String   @map("project_id")
+  suggestions Json     @db.JsonB                      // string[]
+  generatedAt DateTime @map("generated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  content ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  project Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("content_suggestions")
+}
+
+// Step 5.2 — Content briefs dai gap
+enum BriefStatus {
+  PENDING    // generato, non ancora revisionato
+  ACCEPTED   // utente vuole agire su questo
+  REJECTED   // utente lo ha scartato
+  DONE       // contenuto creato per questo brief
+}
+
+model ContentBrief {
+  id              String       @id @default(uuid())
+  projectId       String       @map("project_id")
+  title           String       @db.VarChar(500)
+  platform        SourcePlatform
+  gapType         String       @map("gap_type") @db.VarChar(100)   // "PLATFORM" | "TOPIC" | "ENTITY" | "FRESHNESS"
+  gapLabel        String       @map("gap_label") @db.VarChar(255)   // es. "LinkedIn", "Machine Learning"
+  keyPoints       Json         @map("key_points") @db.JsonB          // string[] — punti chiave da coprire
+  entities        Json         @db.JsonB                              // string[] — entità da menzionare
+  targetWordCount Int?         @map("target_word_count")
+  notes           String?      @db.Text
+  status          BriefStatus  @default(PENDING)
+  generatedAt     DateTime     @map("generated_at")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, gapType, gapLabel])   // dedup: un brief per gap
+  @@index([projectId, status])
+  @@map("content_briefs")
+}
+
+// Aggiungere a ContentItem:
+// suggestion ContentSuggestion?
+
+// Aggiungere a Project:
+// contentSuggestions ContentSuggestion[]
+// contentBriefs      ContentBrief[]
+```
+
+---
+
+## API Design — Fase 5
+
+### Python Engine (nuovi endpoint)
+```
+POST /api/analyze/content-suggestion  → {id, title, text, entities[], project_name}
+                                        ← {id, suggestions: string[]}
+
+POST /api/analyze/content-brief       → {gap_type, gap_label, top_entities[], existing_titles[], platform, project_name}
+                                        ← {title, key_points[], entities[], target_word_count, notes}
+
+POST /api/embed/query                 → {text: str}
+                                        ← {embedding: float[384]}
+
+POST /api/chat/message                → {message, context: {project_name, score, dimensions, top_entities, gaps, relevant_content[]}}
+                                        ← streaming text/event-stream
+```
+
+### Next.js API (nuove route)
+```
+POST /api/projects/:id/content/:contentId/suggestions  → genera + upsert ContentSuggestion (202 o 200 se inline)
+GET  /api/projects/:id/content/:contentId/suggestions  → recupera ContentSuggestion cached o null
+
+POST /api/projects/:id/briefs/generate                 → avvia BullMQ GENERATE_BRIEFS job (202)
+GET  /api/projects/:id/briefs                          → lista brief con filtri status (default PENDING+ACCEPTED)
+PATCH /api/projects/:id/briefs/:briefId                → aggiorna status
+DELETE /api/projects/:id/briefs/:briefId               → elimina brief
+
+POST /api/projects/:id/search/semantic                 → {query, k?} → [{id, title, score, excerpt}]
+
+POST /api/projects/:id/chat                            → streaming: costruisce context + proxy SSE da engine
+```
+
+### BullMQ — nuovi job type
+```
+GENERATE_CONTENT_SUGGESTIONS  → batch: genera suggestions per tutti gli items APPROVED+rawContent senza suggestion recente
+GENERATE_BRIEFS               → legge gap analysis, chiama engine per ogni gap, crea ContentBrief (con dedup)
+```
+
+Aggiungere tipi in `lib/queue.ts` e relativi `run*()` in `workers/discovery.ts`.
+
+---
+
+## Piano Step Atomici — Fase 5
+
+### Step 5.1 — Per-Content Improvement Suggestions ✅
+
+- [x] **Schema**: migration `add-content-suggestions`; modello `ContentSuggestion`; relazione `ContentItem.suggestion` e `Project.contentSuggestions`; `GENERATE_CONTENT_SUGGESTIONS` aggiunto a `AnalysisJobType`
+- [x] **Prisma generate + build check** — 43 route, 0 errori TypeScript
+- [x] **Engine**: `POST /api/analyze/content-suggestion` in `api/analyze.py`
+  - Input: `{id, title, text, entities: list[str], project_name}`
+  - Prompt Haiku: 3-5 suggerimenti in italiano, orientati all'azione; retry su 429
+  - Output: `{id, suggestions: list[str]}`
+- [x] **BullMQ**: `GENERATE_CONTENT_SUGGESTIONS` aggiunto a `lib/queue.ts` + handler `runGenerateContentSuggestions` nel worker
+  - Fetch APPROVED con rawContent, senza suggestion o generatedAt < 7gg, max 50 per job
+  - Upsert `ContentSuggestion`; `resultSummary`: `{processed, skipped, errors}`
+- [x] **Next.js API**:
+  - `GET /api/projects/:id/content/:contentId/suggestions` — ritorna `ContentSuggestion` o null
+  - `POST /api/projects/:id/content/:contentId/suggestions` — inline (sincrona, timeout 30s), upsert, 200
+  - `POST /api/projects/:id/analysis/suggestions` — batch job GENERATE_CONTENT_SUGGESTIONS, 202
+- [x] **UI**: `content-suggestions-card.tsx` nella content detail page (sidebar, sopra Metadati)
+  - Null: pulsante "Genera Suggerimenti" con descrizione
+  - Presenti: lista con ✦, data generazione, bottone "Rigenera" (icona)
+- [x] **Batch**: `generate-suggestions-button.tsx` nel tab Analisi (sotto GapAnalysisCard)
+- [x] **Audit**: `CONTENT_SUGGESTIONS_GENERATED` in `lib/audit.ts`
+- **Done when**: build OK (43 route), suggerimenti generati inline e via batch, rigenera funziona ✅
+
+### Step 5.2 — Content Brief Generator
+
+- [ ] **Schema**: migration `add-content-briefs`; enum `BriefStatus`; modello `ContentBrief`; relazione `Project.contentBriefs`
+- [ ] **Prisma generate + build check**
+- [ ] **Engine**: `POST /api/analyze/content-brief` in `api/analyze.py`
+  - Input: `{gap_type, gap_label, top_entities, existing_titles, platform, project_name}`
+  - Prompt Haiku (tool use): genera brief strutturato con title, key_points (5), entities (3-5), target_word_count, notes
+  - Output: `{title, key_points, entities, target_word_count, notes}`
+- [ ] **BullMQ**: aggiungere `GENERATE_BRIEFS` al worker
+  - Ricalcola gap analysis (stesso logic di `gap-analysis-card.tsx` ma in TypeScript puro)
+  - Per ogni gap severity=CRITICAL o WARNING: chiama engine; `prisma.contentBrief.upsert` (@@unique dedup)
+  - `resultSummary`: `{briefsGenerated, skipped, errors}`
+- [ ] **Next.js API**:
+  - `POST /api/projects/:id/briefs/generate` — check ownership + active job; enqueue; 202
+  - `GET /api/projects/:id/briefs?status=PENDING,ACCEPTED` — paginata (limit 20)
+  - `PATCH /api/projects/:id/briefs/:briefId` — body `{status: BriefStatus}`; ownership check; aggiorna
+  - `DELETE /api/projects/:id/briefs/:briefId` — hard delete; ownership check
+- [ ] **UI**: tab `?tab=briefs` nella pagina progetto
+  - Header: conteggio brief per status + pulsante "Genera Brief"
+  - `AnalysisJobStatus` riusato per mostrare stato job `GENERATE_BRIEFS`
+  - Lista brief in cards:
+    - Badge `gapType` colorato (PLATFORM=blue, TOPIC=purple, ENTITY=orange, FRESHNESS=yellow)
+    - Titolo proposto (bold), badge piattaforma
+    - Key points collassabili (accordion)
+    - Entità da menzionare (chip list)
+    - Word count target badge
+    - Azioni: Accetta / Scarta / Fatto
+  - Filtri: PENDING | ACCEPTED | DONE | REJECTED
+  - Empty state: "Nessun brief — clicca Genera Brief per iniziare"
+- [ ] **Audit**: `BRIEFS_GENERATED` in `lib/audit.ts`
+- **Done when**: build OK, brief generati dai gap, visualizzati in tab dedicato, status modificabile
+
+### Step 5.3 — Semantic Search
+
+- [ ] **Engine**: `POST /api/embed/query` in `api/embed.py`
+  - Input: `{text: str}`; embedding singola stringa con `EmbedderAgent`
+  - Output: `{embedding: list[float]}`
+- [ ] **Next.js API**: `POST /api/projects/:id/search/semantic`
+  - Body: `{query: string, k?: number}` (default k=10)
+  - Ownership check; chiama engine per embedding query
+  - pgvector query: `SELECT id, title, "rawContent", (embedding <=> $1::vector) AS distance FROM content_items WHERE project_id = $2 AND embedding IS NOT NULL ORDER BY distance LIMIT $3`
+  - Filtra per `distance < 0.7`; calcola `score = round((1 - distance) * 100)`; tronca excerpt a 200 chars
+  - Ritorna `{data: [{id, title, excerpt, score, url}], query, count}`
+- [ ] **UI**: `semantic-search-panel.tsx` nella tab Analisi (sopra o sotto l'entities panel)
+  - Input testuale con placeholder "Cerca un topic o concetto…" + bottone "Cerca"
+  - Loading state (spinner nella barra)
+  - Risultati: lista con titolo (link), badge similarità (es. "87%"), snippet excerpt
+  - Se < 3 risultati: alert "⚠ Questo topic non è ben coperto nel tuo content portfolio"
+  - Se 0 risultati: empty state "Nessun contenuto trovato su questo topic — considera di creare un brief"
+  - Nessun risultato prima di una ricerca (blank state)
+- **Done when**: build OK, ricerca semantica funziona, risultati mostrati con score, gap evidenziati
+
+### Step 5.4 — Conversational Agent (Chat)
+
+- [ ] **Engine**: `POST /api/chat/message` con streaming in `api/chat.py` (nuovo file)
+  - Input: `{message, context: {project_name, overall_score, dimensions, top_entities, recent_gaps, relevant_content}}`
+  - System prompt: inserisce tutti i campi del context; istruisce il modello a rispondere in italiano, in modo conciso e orientato all'azione
+  - Streaming: `client.messages.stream(...)` → yield SSE tokens `data: {token}\n\n`; `data: [DONE]\n\n` in chiusura
+  - Modello: `CHAT_MODEL` env var (default `claude-haiku-4-5-20251001`)
+  - Errori non-streaming: ritorna JSON `{error}` con status appropriato
+- [ ] **Next.js API**: `POST /api/projects/:id/chat` (streaming)
+  - Ownership check; costruisce context:
+    1. `ProjectScore` dal DB (score + dimensions)
+    2. Top-10 `Entity` per frequenza
+    3. Ultimi 3 gap critici (stessa logica gap analysis)
+    4. Top-3 semantic search results del messaggio utente (chiama engine `embed/query` + pgvector)
+  - Proxy SSE: `fetch(engine/chat/message, {body})` → `TransformStream` → `new Response(stream, {headers: {'Content-Type': 'text/event-stream'}})`
+- [ ] **UI**: `chat-panel.tsx` — sezione nel tab Analisi (in fondo) o tab dedicato `?tab=chat`
+  - Area messaggi scrollabile con bolle stile chat (utente destra/grigio, AI sinistra/bianco)
+  - Input + bottone Invia; Invio per inviare, Shift+Invio per newline
+  - Streaming rendering: testo appende token per token (tipo ChatGPT)
+  - Loading indicator durante prima risposta (spinner in bolla AI)
+  - Prompt suggeriti (clickable chips): "Quali contenuti creare?", "Come migliorare lo score?", "Quali topic mancano?", "Analizza i gap critici"
+  - Disclaimer footer: "La conversazione non viene salvata tra sessioni"
+  - `clearChat()` bottone per reset conversazione
+- **Done when**: build OK, chat funzionante con streaming visibile, risposte contestualizzate al progetto
+
+### Step 5.5 — Phase 5 Polish
+
+- [ ] Loading skeletons per sezioni Suggestions, Briefs, Semantic Search
+- [ ] Empty states coerenti con Fasi 1-4
+- [ ] Error handling: engine down → toast/alert graceful per ogni feature; retry per BullMQ jobs
+- [ ] Mobile responsiveness per nuove sezioni (chat, briefs, search)
+- [ ] Performance: limit query DB; paginazione briefs (già prevista); semantic search max k=20
+- [ ] Audit log: `CONTENT_SUGGESTIONS_GENERATED`, `BRIEFS_GENERATED` in `lib/audit.ts`
+- [ ] Update navigazione sidebar/tab per accesso alle nuove sezioni
+- [ ] ADR table aggiornata in CLAUDE.md (ADR-012 → ADR-015)
+- [ ] Test manuale end-to-end di tutti i flow
+- **Done when**: UX coerente con Fasi 1-4, tutti gli edge case gestiti, build OK senza errori TypeScript
+
+---
 
 ### Fase 4 — completata
 
@@ -486,6 +753,10 @@ COMPUTE_SCORE       → calcolo score + suggestions LLM
 | 009 | Embeddings: **fastembed** (ONNX, ~200 MB), modello multilingual-MiniLM-L12-v2 384 dim |
 | 010 | Entity extraction: **Claude Haiku** con structured tool use, batch 1 item/chiamata |
 | 011 | AI Readiness Score: 5 dimensioni calcolate in Next.js SQL; suggestions via Claude Haiku |
+| 012 | Per-item suggestions: on demand + cache DB (`ContentSuggestion`), max 50/job batch |
+| 013 | Content brief generation: Claude Haiku structured output; dedup su `(projectId, gapType, gapLabel)` |
+| 014 | Semantic search: pgvector cosine distance, engine genera embedding query, Next.js fa la search |
+| 015 | Chat agent: stateless (no DB), context injection via system prompt, streaming SSE |
 
 ---
 

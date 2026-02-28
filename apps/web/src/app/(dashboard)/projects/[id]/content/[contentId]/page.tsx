@@ -15,6 +15,7 @@ import {
   DISCOVERY_LABELS,
 } from "@/lib/content-labels";
 import { FetchSingleButton } from "./fetch-single-button";
+import { ContentSuggestionsCard } from "./content-suggestions-card";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -30,9 +31,10 @@ export default async function ContentDetailPage({ params }: PageProps) {
   const project = await assertProjectOwnership(projectId, currentUser.id);
   if (!project) notFound();
 
-  const item = await prisma.contentItem.findFirst({
-    where: { id: contentId, projectId },
-  });
+  const [item, suggestion] = await Promise.all([
+    prisma.contentItem.findFirst({ where: { id: contentId, projectId } }),
+    prisma.contentSuggestion.findUnique({ where: { contentId } }),
+  ]);
   if (!item) notFound();
 
   // Format publishedAt as YYYY-MM-DD for the edit form date input
@@ -146,7 +148,20 @@ export default async function ContentDetailPage({ params }: PageProps) {
           )}
         </div>
 
-        {/* Sidebar: metadata */}
+        {/* Sidebar: suggestions + metadata */}
+        <div className="space-y-4">
+        <ContentSuggestionsCard
+          projectId={projectId}
+          contentId={item.id}
+          initialSuggestion={
+            suggestion
+              ? {
+                  suggestions: suggestion.suggestions as string[],
+                  generatedAt: suggestion.generatedAt.toISOString(),
+                }
+              : null
+          }
+        />
         <Card className="h-fit">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium">Metadati</CardTitle>
@@ -228,6 +243,7 @@ export default async function ContentDetailPage({ params }: PageProps) {
             )}
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   );
