@@ -3,8 +3,8 @@
 ## Stato Corrente
 
 **Fase**: 3 — Knowledge Graph & Analysis
-**Step corrente**: 3.2 completato → prossimo: Step 3.3
-**Ultimo commit**: feat(step-3.2): embedding generation — fastembed ONNX, GENERATE_EMBEDDINGS job, pgvector update
+**Step corrente**: 3.3 completato → prossimo: Step 3.4
+**Ultimo commit**: feat(step-3.3): topic clustering — KMeans + Claude Haiku labels, CLUSTER_TOPICS job
 **Aggiornato**: 2026-02-28
 
 ---
@@ -371,27 +371,27 @@ COMPUTE_SCORE       → calcolo score + suggestions LLM
 - **Note**: Prisma esclude i campi `Unsupported` dai tipi generati → tutte le operazioni embedding via `$queryRawUnsafe`/`$executeRawUnsafe`
 - **Done when**: content items con rawContent hanno vettore embedding; similarity query via `$queryRaw` funziona ✅
 
-### Step 3.3 — Topic Clustering
-- [ ] `agents/clusterer.py`: `TopicClusterer`
-  - Input: `[{id, embedding: list[float]}]`
+### Step 3.3 — Topic Clustering ✅
+- [x] `agents/clusterer.py`: `TopicClusterer`
+  - Input: `[{id, embedding: list[float]}]` + `titles: dict[id, title]`
   - `k = max(3, min(12, round(sqrt(n / 2))))` dove n = numero content items
-  - KMeans da `scikit-learn` (n_init=10, random_state=42)
-  - Silhouette score per validare k (se < 0.15: ridurre k o restituire cluster singolo)
-  - Label cluster: Claude Haiku — prompt con 5 titoli sample per cluster → label 2-4 parole in italiano
-  - Output: `[{id, clusterIdx, topicLabel, confidence}]`; confidence = distanza inversa dal centroide normalizzata
-- [ ] `api/analyze.py`: `POST /api/analyze/topics`
-- [ ] `requirements.txt`: aggiungi `scikit-learn==1.6.1`
-- [ ] BullMQ: aggiungere `CLUSTER_TOPICS` al worker
-  - Fetch embeddings via `$queryRaw`: `SELECT id, embedding::text FROM content_items WHERE project_id=$1 AND embedding IS NOT NULL`
-  - Parse vettori da stringa pgvector `[x,y,z]`
-  - Rimuovi Entity TOPIC esistenti del progetto
-  - Crea Entity (type=TOPIC) per ogni label unica
-  - Crea ContentEntity per ogni assegnazione
+  - KMeans da `scikit-learn` (n_init=10, random_state=42), via thread executor
+  - Silhouette score per validare k: se < 0.15 prova k=2, poi collassa a k=1
+  - Label cluster: Claude Haiku — 5 titoli sample per cluster → label 2-4 parole in italiano, in parallelo
+  - Output: `[{id, clusterIdx, topicLabel, confidence}]`; confidence = 1 - dist_normalizzata_al_centroide
+- [x] `api/analyze.py`: `POST /api/analyze/topics` — soft error nel body se < 6 items
+- [x] `requirements.txt`: aggiunti `scikit-learn==1.6.1` + `numpy==1.26.4`
+- [x] BullMQ: aggiunto `CLUSTER_TOPICS` al worker (`discovery.ts`)
+  - Fetch embeddings via `$queryRawUnsafe`: `embedding::text AS embedding`
+  - Parse JSON pgvector `"[x,y,z]"` → `number[]`
+  - Delete Entity TOPIC esistenti (cascade su ContentEntity)
+  - Crea Entity (type=TOPIC) per ogni label unica + ContentEntity per ogni assegnazione
   - `resultSummary`: `{clustersFound, itemsClustered, errors}`
-- [ ] Next.js: `POST /api/projects/:id/analysis/cluster` → enqueue `CLUSTER_TOPICS`
-- [ ] Prerequisito: step 3.2 completato (embedding presenti)
-- **Note**: min 6 content items con embedding per clustering sensato; se meno, skip con warning
-- **Done when**: Entity TOPIC presenti, ContentEntity con topic assegnati
+- [x] Next.js: `POST /api/projects/:id/analysis/cluster` → check ≥ 6 embeddings, enqueue
+- [x] Rebuild Docker image (scikit-learn + numpy aggiunti)
+- **Note**: min 6 content items con embedding per clustering sensato; soft error se meno
+- **Note**: Entity TOPIC precedenti eliminati ad ogni reclusterizzazione (idempotente)
+- **Done when**: Entity TOPIC presenti, ContentEntity con topic assegnati ✅
 
 ### Step 3.4 — AI Readiness Scoring
 - [ ] `lib/scoring.ts`: calcolo dimensioni in Next.js con Prisma

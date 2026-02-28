@@ -31,6 +31,7 @@ import type {
   AnalysisJobPayload,
   ExtractEntitiesPayload,
   GenerateEmbeddingsPayload,
+  ClusterTopicsPayload,
 } from "../lib/queue";
 
 // ─── Prisma (dedicated client for the worker process) ─────────────────────────
@@ -517,6 +518,136 @@ async function runGenerateEmbeddings(
   return { processed, errors };
 }
 
+// ─── CLUSTER_TOPICS handler ───────────────────────────────────────────────────
+
+interface EngineClusterAssignment {
+  id: string;
+  cluster_idx: number;
+  topic_label: string;
+  confidence: number;
+}
+
+interface EngineClusterResponse {
+  assignments: EngineClusterAssignment[];
+  clusters_found: number;
+  error: string | null;
+}
+
+interface ClusterTopicsResult {
+  clustersFound: number;
+  itemsClustered: number;
+  errors: number;
+}
+
+async function runClusterTopics(
+  payload: ClusterTopicsPayload
+): Promise<ClusterTopicsResult> {
+  const { projectId } = payload;
+
+  // Fetch items with embeddings — cast to text since Prisma omits Unsupported fields
+  const rows = await prisma.$queryRawUnsafe<
+    { id: string; title: string; embedding: string }[]
+  >(
+    `SELECT id, title, embedding::text AS embedding
+     FROM content_items
+     WHERE project_id = $1
+       AND embedding IS NOT NULL`,
+    projectId
+  );
+
+  if (rows.length === 0) {
+    return { clustersFound: 0, itemsClustered: 0, errors: 0 };
+  }
+
+  // pgvector returns "[x,y,z,...]" which is valid JSON
+  const items = rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    embedding: JSON.parse(r.embedding) as number[],
+  }));
+
+  const engineRes = await fetch(`${ENGINE_URL}/api/analyze/topics`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-engine-api-key": ENGINE_API_KEY,
+    },
+    body: JSON.stringify({
+      items: items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        embedding: item.embedding,
+      })),
+    }),
+    signal: AbortSignal.timeout(300_000), // 5 min (KMeans + LLM labeling)
+  });
+
+  if (!engineRes.ok) {
+    const detail = await engineRes.json().catch(() => ({}));
+    throw new Error(
+      `Engine cluster failed (${engineRes.status}): ${JSON.stringify(detail)}`
+    );
+  }
+
+  const data = (await engineRes.json()) as EngineClusterResponse;
+
+  if (data.error) {
+    // Soft error from engine (e.g. not enough items)
+    console.warn(`[worker] Cluster topics soft error: ${data.error}`);
+    return { clustersFound: 0, itemsClustered: 0, errors: 1 };
+  }
+
+  if (data.assignments.length === 0) {
+    return { clustersFound: 0, itemsClustered: 0, errors: 0 };
+  }
+
+  // Remove existing TOPIC entities for this project (cascades ContentEntity)
+  await prisma.entity.deleteMany({ where: { projectId, type: "TOPIC" } });
+
+  // Deduplicate labels and create Entity records
+  const uniqueLabels = [...new Set(data.assignments.map((a) => a.topic_label))];
+  const labelToEntityId = new Map<string, string>();
+
+  for (const label of uniqueLabels) {
+    const entity = await prisma.entity.create({
+      data: {
+        projectId,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        type: "TOPIC" as any,
+        label,
+        normalizedLabel: label.trim().toLowerCase(),
+        frequency: 0,
+      },
+    });
+    labelToEntityId.set(label, entity.id);
+  }
+
+  // Create ContentEntity + increment frequency per assignment
+  let itemsClustered = 0;
+
+  for (const assignment of data.assignments) {
+    const entityId = labelToEntityId.get(assignment.topic_label);
+    if (!entityId) continue;
+
+    await prisma.contentEntity.create({
+      data: {
+        contentId: assignment.id,
+        entityId,
+        salience: assignment.confidence,
+      },
+    });
+
+    await prisma.entity.update({
+      where: { id: entityId },
+      data: { frequency: { increment: 1 } },
+    });
+
+    itemsClustered++;
+  }
+
+  return { clustersFound: data.clusters_found, itemsClustered, errors: 0 };
+}
+
 // ─── Redis connection ─────────────────────────────────────────────────────────
 
 const redisConnection = (() => {
@@ -674,6 +805,8 @@ const analysisWorker = new Worker<AnalysisJobPayload>(
         resultSummary = await runExtractEntities(payload);
       } else if (payload.jobType === "GENERATE_EMBEDDINGS") {
         resultSummary = await runGenerateEmbeddings(payload);
+      } else if (payload.jobType === "CLUSTER_TOPICS") {
+        resultSummary = await runClusterTopics(payload);
       } else {
         throw new Error(`Unknown analysis job type: ${(payload as { jobType: string }).jobType}`);
       }
@@ -698,7 +831,9 @@ const analysisWorker = new Worker<AnalysisJobPayload>(
         err instanceof Error &&
         (err.message.includes("fetch failed") ||
           err.message.includes("ECONNREFUSED") ||
-          err.message.includes("Engine extract failed"));
+          err.message.includes("Engine extract failed") ||
+          err.message.includes("Engine embed failed") ||
+          err.message.includes("Engine cluster failed"));
 
       const message = isEngineDown
         ? `Engine non raggiungibile: ${err instanceof Error ? err.message : String(err)}`

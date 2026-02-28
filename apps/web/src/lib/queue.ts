@@ -65,9 +65,17 @@ export type GenerateEmbeddingsPayload = {
   analysisJobId: string;
 };
 
+export type ClusterTopicsPayload = {
+  jobType: "CLUSTER_TOPICS";
+  projectId: string;
+  userId: string;
+  analysisJobId: string;
+};
+
 export type AnalysisJobPayload =
   | ExtractEntitiesPayload
-  | GenerateEmbeddingsPayload;
+  | GenerateEmbeddingsPayload
+  | ClusterTopicsPayload;
 
 // ─── Connection ───────────────────────────────────────────────────────────────
 
