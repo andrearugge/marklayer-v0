@@ -6,8 +6,8 @@
 
 **Fase**: 2 — Content Discovery
 **Step corrente**: 2b.2 completato
-**Ultimo commit**: feat(step-2b.2): platform search agent — Google CSE + Next.js proxy
-**Data ultimo aggiornamento**: 2026-02-18
+**Ultimo commit**: refactor(step-2b.2): switch platform search from Google CSE to Brave Search API
+**Data ultimo aggiornamento**: 2026-02-28
 
 ---
 
@@ -290,14 +290,11 @@ ai-visibility-platform/
 - **Motivazione**: controllo completo, nessun costo per request, nessun vendor lock-in
 - **Nota**: Puppeteer in Docker richiede configurazione Chromium headless
 
-### ADR-007: Platform Discovery — Google Search
+### ADR-007: Platform Discovery — Brave Search API
 - Ricerca contenuti su tutte le piattaforme via `site:platform.com "nome autore"` o query equivalenti
 - Un solo meccanismo invece di N integrazioni API
-- Opzioni di implementazione:
-  - Google Custom Search JSON API (100 query/giorno gratis, poi $5/1000 query)
-  - SerpAPI o simili (più costoso ma più affidabile)
-  - Scraping diretto dei risultati Google (fragile, rischio ban)
-- **Decisione rimandata a Step 2b.2**: per ora ci focalizziamo sul CRUD manuale
+- **Decisione finale**: Brave Search API (2.000 query/mese gratis, indice proprietario, setup con sola API key)
+- Google Custom Search JSON API scartata: 403 PERMISSION_DENIED persistente nonostante configurazione corretta (bug di propagazione Google + org policy su beconcept.studio)
 
 ---
 
