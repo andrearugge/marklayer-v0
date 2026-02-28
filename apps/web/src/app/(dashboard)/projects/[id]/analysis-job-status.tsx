@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Clock, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 export interface SerializedAnalysisJob {
   id: string;
@@ -31,6 +33,7 @@ interface Props {
 
 export function AnalysisJobStatus({ projectId, initialJob, onCompleted }: Props) {
   const [job, setJob] = useState<SerializedAnalysisJob | null>(initialJob);
+  const [restarting, setRestarting] = useState(false);
 
   const isActive = job?.status === "PENDING" || job?.status === "RUNNING";
 
@@ -58,12 +61,37 @@ export function AnalysisJobStatus({ projectId, initialJob, onCompleted }: Props)
     return () => clearInterval(interval);
   }, [isActive, projectId, onCompleted]);
 
+  async function handleRestart() {
+    setRestarting(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/analysis/start`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data?.error?.message ?? "Impossibile riavviare l'analisi.");
+        return;
+      }
+      toast.success("Analisi riavviata.");
+      // Start polling immediately by setting a fake PENDING job
+      setJob((prev) =>
+        prev
+          ? { ...prev, status: "PENDING", errorMessage: null }
+          : null
+      );
+    } catch {
+      toast.error("Errore di rete. Riprova.");
+    } finally {
+      setRestarting(false);
+    }
+  }
+
   if (!job) return null;
 
   const label = JOB_TYPE_LABELS[job.jobType] ?? job.jobType;
 
   return (
-    <div className="flex items-center gap-2 text-sm">
+    <div className="flex items-center gap-2 text-sm flex-wrap">
       {job.status === "PENDING" && (
         <>
           <Clock className="h-4 w-4 text-yellow-500 shrink-0" />
@@ -88,9 +116,27 @@ export function AnalysisJobStatus({ projectId, initialJob, onCompleted }: Props)
           <span className="text-muted-foreground">
             {label} — fallito
             {job.errorMessage && (
-              <span className="ml-1 text-xs text-red-500">({job.errorMessage.slice(0, 60)})</span>
+              <span className="ml-1 text-xs text-red-500">
+                ({job.errorMessage.slice(0, 80)})
+              </span>
             )}
           </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-xs"
+            onClick={handleRestart}
+            disabled={restarting}
+          >
+            {restarting ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <>
+                <RotateCcw className="h-3 w-3 mr-1" />
+                Riavvia
+              </>
+            )}
+          </Button>
         </>
       )}
       {isActive && (
