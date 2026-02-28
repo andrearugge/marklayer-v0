@@ -146,6 +146,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
   let status: ContentStatus | undefined;
   let sortBy: "createdAt" | "title" | "publishedAt" = "createdAt";
   let sortOrder: "asc" | "desc" = "desc";
+  let unfetchedCount = 0;
 
   if (activeTab === "content") {
     const contentQuery = ContentQuerySchema.safeParse({
@@ -183,7 +184,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
       : sortBy === "publishedAt" ? { publishedAt: sortOrder }
       : { createdAt: sortOrder };
 
-    const [rawItems, count] = await Promise.all([
+    const [rawItems, count, unfetchedRawContent] = await Promise.all([
       prisma.contentItem.findMany({
         where: contentWhere,
         select: {
@@ -196,6 +197,9 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
         take: limit,
       }),
       prisma.contentItem.count({ where: contentWhere }),
+      prisma.contentItem.count({
+        where: { projectId: id, url: { not: null }, rawContent: null, status: { not: "REJECTED" } },
+      }),
     ]);
 
     contentTotal = count;
@@ -205,6 +209,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
       publishedAt: item.publishedAt?.toISOString() ?? null,
       createdAt: item.createdAt.toISOString(),
     }));
+    unfetchedCount = unfetchedRawContent;
   }
 
   // ─── Discovery tab data ────────────────────────────────────────────────────
@@ -212,7 +217,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
   let latestJob: SerializedDiscoveryJob | null = null;
   let jobHistory: SerializedDiscoveryJob[] = [];
   let discoveredItems: DiscoveredItem[] = [];
-  let unfetchedCount = 0;
 
   if (activeTab === "discovery") {
     const [latestRaw, historyRaw, discoveredRaw, unfetchedRaw] = await Promise.all([
@@ -611,7 +615,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
 
           {/* Content list */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <h2 className="text-lg font-semibold">
                 Contenuti
                 {contentTotal > 0 && (
@@ -620,9 +624,12 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
                   </span>
                 )}
               </h2>
-              {!isArchived && totalCount === 0 && (
-                <AddContentDialog projectId={project.id} />
-              )}
+              <div className="flex items-center gap-2">
+                <FetchContentButton projectId={id} unfetchedCount={unfetchedCount} />
+                {!isArchived && totalCount === 0 && (
+                  <AddContentDialog projectId={project.id} />
+                )}
+              </div>
             </div>
 
             {totalCount === 0 ? (

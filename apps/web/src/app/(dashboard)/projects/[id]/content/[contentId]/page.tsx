@@ -14,6 +14,7 @@ import {
   TYPE_LABELS,
   DISCOVERY_LABELS,
 } from "@/lib/content-labels";
+import { FetchSingleButton } from "./fetch-single-button";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -115,15 +116,19 @@ export default async function ContentDetailPage({ params }: PageProps) {
                   {item.rawContent}
                 </pre>
               ) : (
-                <div className="flex flex-col items-center justify-center py-10 text-center">
-                  <FileText className="mb-3 h-10 w-10 text-muted-foreground/30" />
-                  <p className="text-sm text-muted-foreground">
-                    Contenuto non ancora estratto.
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Il testo verrà recuperato automaticamente nella Fase 2b (crawler),
-                    oppure puoi incollarlo tramite Modifica.
-                  </p>
+                <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
+                  <FileText className="h-10 w-10 text-muted-foreground/30" />
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">
+                      Contenuto non ancora estratto.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {item.url
+                        ? "Clicca il pulsante per estrarre il testo dalla pagina, oppure incollalo tramite Modifica."
+                        : "Questo contenuto non ha un URL — incolla il testo tramite Modifica."}
+                    </p>
+                  </div>
+                  {item.url && <FetchSingleButton projectId={projectId} />}
                 </div>
               )}
             </CardContent>
