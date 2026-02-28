@@ -26,11 +26,12 @@ export async function POST(
   }
 
   // Count items with rawContent but no embedding (raw query — Prisma omits vector field)
+  // Note: rawContent has no @map, so the DB column is camelCase and must be quoted.
   const rows = await prisma.$queryRawUnsafe<{ count: string }[]>(
     `SELECT COUNT(*) as count
      FROM content_items
      WHERE project_id = $1
-       AND raw_content IS NOT NULL
+       AND "rawContent" IS NOT NULL
        AND embedding IS NULL`,
     projectId
   );

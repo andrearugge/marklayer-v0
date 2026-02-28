@@ -456,13 +456,14 @@ async function runGenerateEmbeddings(
 
   // Fetch items that have rawContent but no embedding yet.
   // Prisma omits the `embedding` (Unsupported type) from where input — use raw SQL.
+  // Note: rawContent has no @map, so the DB column is camelCase and must be quoted.
   const items = await prisma.$queryRawUnsafe<
-    { id: string; title: string; raw_content: string }[]
+    { id: string; title: string; rawContent: string }[]
   >(
-    `SELECT id, title, raw_content
+    `SELECT id, title, "rawContent"
      FROM content_items
      WHERE project_id = $1
-       AND raw_content IS NOT NULL
+       AND "rawContent" IS NOT NULL
        AND embedding IS NULL`,
     projectId
   );
@@ -488,7 +489,7 @@ async function runGenerateEmbeddings(
         items: batch.map((item) => ({
           id: item.id,
           // Combine title + content for richer embedding
-          text: `${item.title}. ${(item.raw_content ?? "").slice(0, 3500)}`,
+          text: `${item.title}. ${(item.rawContent ?? "").slice(0, 3500)}`,
         })),
       }),
       signal: AbortSignal.timeout(300_000), // 5 min per batch
