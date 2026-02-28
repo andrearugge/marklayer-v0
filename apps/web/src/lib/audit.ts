@@ -18,6 +18,7 @@ export const AUDIT_ACTIONS = {
   CONTENT_IMPORTED: "content.imported",
   CONTENT_DISCOVERED: "content.discovered",
   CONTENT_BULK_ACTION: "content.bulk_action",
+  CONTENT_FETCHED: "content.fetched",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];

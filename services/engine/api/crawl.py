@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, HttpUrl, field_validator
 
-from agents.crawler import CrawlerAgent, CrawlResult, PageData
+from agents.crawler import CrawlerAgent, CrawlResult, ExtractResult, PageData, extract_urls
 from api.deps import verify_api_key
 
 router = APIRouter(
@@ -89,4 +89,66 @@ async def crawl_site(req: CrawlSiteRequest) -> CrawlSiteResponse:
         crawled_count=result.crawled_count,
         error_count=result.error_count,
         errors=result.errors,
+    )
+
+
+# ─── /extract ─────────────────────────────────────────────────────────────────
+
+
+class ExtractRequest(BaseModel):
+    urls: list[str]
+    concurrency: int = 5
+
+    @field_validator("urls")
+    @classmethod
+    def validate_urls(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("at least one URL is required")
+        return v[:50]  # max 50 per request
+
+    @field_validator("concurrency")
+    @classmethod
+    def clamp_concurrency(cls, v: int) -> int:
+        return max(1, min(v, 10))
+
+
+class ExtractResultItem(BaseModel):
+    url: str
+    title: str | None = None
+    raw_content: str | None = None
+    word_count: int | None = None
+    excerpt: str | None = None
+    published_at: str | None = None
+    error: str | None = None
+
+
+class ExtractResponse(BaseModel):
+    results: list[ExtractResultItem]
+
+
+@router.post("/extract", response_model=ExtractResponse)
+async def extract_content(req: ExtractRequest) -> ExtractResponse:
+    """
+    Fetch and extract clean text content from one or more URLs.
+
+    URLs are processed concurrently (up to `concurrency` at a time).
+    A failure on one URL does not stop others — check the `error` field
+    per result. Protected by X-Engine-API-Key header.
+    """
+    results: list[ExtractResult] = await extract_urls(
+        req.urls, concurrency=req.concurrency
+    )
+    return ExtractResponse(
+        results=[
+            ExtractResultItem(
+                url=r.url,
+                title=r.title,
+                raw_content=r.raw_content,
+                word_count=r.word_count,
+                excerpt=r.excerpt,
+                published_at=r.published_at,
+                error=r.error,
+            )
+            for r in results
+        ]
     )

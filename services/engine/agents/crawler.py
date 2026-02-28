@@ -77,6 +77,17 @@ class CrawlResult:
     errors: list[dict[str, str]] = field(default_factory=list)
 
 
+@dataclass
+class ExtractResult:
+    url: str
+    title: str | None = None
+    raw_content: str | None = None
+    word_count: int | None = None
+    excerpt: str | None = None
+    published_at: str | None = None
+    error: str | None = None
+
+
 # ─── Agent ────────────────────────────────────────────────────────────────────
 
 
@@ -320,6 +331,69 @@ def _extract_links(soup: BeautifulSoup, base_url: str) -> list[str]:
         if parsed.scheme in ("http", "https"):
             links.append(full)
     return links
+
+
+# ─── Single-URL extraction ────────────────────────────────────────────────────
+
+
+async def extract_urls(
+    urls: list[str],
+    concurrency: int = 5,
+    timeout: float = 15.0,
+) -> list[ExtractResult]:
+    """
+    Fetch and extract content from a list of URLs concurrently.
+
+    Each URL is processed independently; a failure on one URL does not
+    affect the others. Returns one ExtractResult per input URL, preserving order.
+    """
+    sem = asyncio.Semaphore(concurrency)
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "it,en;q=0.9",
+    }
+
+    async def _fetch_one(client: httpx.AsyncClient, url: str) -> ExtractResult:
+        async with sem:
+            try:
+                resp = await client.get(url)
+            except httpx.TimeoutException:
+                return ExtractResult(url=url, error="timeout")
+            except httpx.TooManyRedirects:
+                return ExtractResult(url=url, error="too many redirects")
+            except httpx.RequestError as exc:
+                return ExtractResult(url=url, error=str(exc))
+
+            if resp.status_code >= 400:
+                return ExtractResult(url=url, error=f"HTTP {resp.status_code}")
+
+            content_type = resp.headers.get("content-type", "")
+            if "text/html" not in content_type:
+                return ExtractResult(
+                    url=url, error=f"non-HTML content-type: {content_type[:60]}"
+                )
+
+            soup = BeautifulSoup(resp.text, "lxml")
+            page = _extract_page_data(soup, str(resp.url))
+
+            return ExtractResult(
+                url=url,
+                title=page.title,
+                raw_content=page.raw_content,
+                word_count=page.word_count,
+                excerpt=page.excerpt,
+                published_at=page.published_at,
+            )
+
+    async with httpx.AsyncClient(
+        headers=headers,
+        timeout=timeout,
+        follow_redirects=True,
+        max_redirects=5,
+    ) as client:
+        tasks = [_fetch_one(client, url) for url in urls]
+        return list(await asyncio.gather(*tasks))
 
 
 # ─── URL utilities ────────────────────────────────────────────────────────────
