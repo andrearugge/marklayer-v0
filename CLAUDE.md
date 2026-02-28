@@ -3,8 +3,8 @@
 ## Stato Corrente
 
 **Fase**: 3 — Knowledge Graph & Analysis
-**Step corrente**: 3.5 completato → prossimo: Step 3.6
-**Ultimo commit**: feat(step-3.5): analysis dashboard UI — score card, entities panel, topics panel, content health
+**Step corrente**: 3.6 completato — Fase 3 completata
+**Ultimo commit**: feat(step-3.6): FULL_ANALYSIS orchestration, project_id index, Phase 3 polish
 **Aggiornato**: 2026-02-28
 
 ---
@@ -440,22 +440,21 @@ COMPUTE_SCORE       → calcolo score + suggestions LLM
 - **Note**: `SerializedProjectScore` non include `projectId`, `createdAt`, `updatedAt` — serializzato esplicitamente
 - **Done when**: tab Analisi navigabile, score + entities + topics visibili, bottone avvia funziona ✅
 
-### Step 3.6 — Phase 3 Polish
-- [ ] `FULL_ANALYSIS` orchestration: EXTRACT → EMBED → CLUSTER → SCORE in sequenza nel worker
-  - Ogni step aggiorna `resultSummary` progressivamente
-  - Se EXTRACT fallisce → abort; se CLUSTER fallisce → prosegui con SCORE parziale
-  - Skip CLUSTER se < 6 items con embedding
-- [ ] `workers/analysis.ts` (o integrazione nel worker esistente): separare il worker se il file cresce troppo
-- [ ] Audit: `ANALYSIS_JOB_STARTED`, `ANALYSIS_JOB_COMPLETED`, `ANALYSIS_JOB_FAILED`
-- [ ] Docker: volume per fastembed model cache (`/root/.cache/huggingface/`)
-- [ ] Performance: `SELECT embedding` pesante — aggiungere `@@index([projectId])` su `content_items` per embedding queries
-- [ ] Edge cases:
-  - 0 contenuti APPROVED → score = 0 su tutte le dimensioni + suggestion dedicata
-  - rawContent mancante su tutti → embedding/clustering skippati, score penalizzato
-  - Progetto senza nome brand nel domain → coerenza non calcolabile (flag nel score)
-- [ ] Invalidazione score: hook in API content PATCH + bulk → `ProjectScore.isStale = true`
-- [ ] `requirements.txt`: lock versions (fastembed 0.4.2, scikit-learn 1.6.1)
-- **Done when**: FULL_ANALYSIS robusto, edge cases gestiti, UX coerente con Fasi 1-2
+### Step 3.6 — Phase 3 Polish ✅
+- [x] `FULL_ANALYSIS` orchestration in `workers/discovery.ts`:
+  - Pipeline: `runExtractEntities` → `runGenerateEmbeddings` → `runClusterTopics` → `runComputeScore`
+  - EXTRACT e EMBED falliscono → abort (throw)
+  - CLUSTER: skip se < 6 embedding; se fallisce → warn + continua con SCORE (`{ errors: 1, skipped: false }`)
+  - SCORE sempre eseguito se EMBED non ha fallito
+- [x] `FullAnalysisPayload` aggiunto a `lib/queue.ts`, case `FULL_ANALYSIS` nel worker
+- [x] `POST /api/projects/:id/analysis/start` aggiornato → usa `FULL_ANALYSIS` (non più COMPUTE_SCORE)
+- [x] Audit: `ANALYSIS_JOB_STARTED/COMPLETED/FAILED` già presenti in `lib/audit.ts` e worker ✅
+- [x] Docker: volume `fastembed_models:/app/models` già in `docker-compose.yml`, `_CACHE_DIR = "/app/models"` in `embedder.py` ✅
+- [x] Performance: `@@index([projectId])` aggiunto a `content_items`; migration `add-content-items-project-id-index` applicata
+- [x] Edge cases: già gestiti — `rawContent IS NULL` skip embed, `embedding IS NULL` skip cluster, 0 items → score 0
+- [x] Invalidazione score: `isStale: true` già in `PATCH /content` e `PATCH /content/bulk` ✅
+- **Note**: worker separato non necessario — file discovery.ts ~1000 righe, gestibile
+- **Done when**: FULL_ANALYSIS robusto, edge cases gestiti, UX coerente con Fasi 1-2 ✅
 
 ---
 

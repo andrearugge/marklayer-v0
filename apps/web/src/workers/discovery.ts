@@ -34,6 +34,7 @@ import type {
   GenerateEmbeddingsPayload,
   ClusterTopicsPayload,
   ComputeScorePayload,
+  FullAnalysisPayload,
 } from "../lib/queue";
 import { computeScoreDimensions } from "../lib/scoring";
 import { generateSuggestions } from "../lib/suggestions";
@@ -707,6 +708,65 @@ async function runComputeScore(payload: ComputeScorePayload): Promise<ComputeSco
   };
 }
 
+// ─── FULL_ANALYSIS handler ────────────────────────────────────────────────────
+
+const MIN_EMBEDDINGS_FOR_CLUSTER = 6;
+
+interface FullAnalysisResult {
+  extract: ExtractResult;
+  embed: EmbedResult;
+  cluster: (ClusterTopicsResult & { skipped?: boolean }) | null;
+  score: ComputeScoreResult;
+}
+
+async function runFullAnalysis(
+  payload: FullAnalysisPayload
+): Promise<FullAnalysisResult> {
+  const { projectId } = payload;
+
+  // Step 1: Extract entities — abort if fails
+  const extract = await runExtractEntities({
+    ...payload,
+    jobType: "EXTRACT_ENTITIES",
+  });
+
+  // Step 2: Generate embeddings — abort if fails
+  const embed = await runGenerateEmbeddings({
+    ...payload,
+    jobType: "GENERATE_EMBEDDINGS",
+  });
+
+  // Step 3: Cluster topics — skip if < MIN_EMBEDDINGS_FOR_CLUSTER; don't abort if fails
+  let cluster: (ClusterTopicsResult & { skipped?: boolean }) | null = null;
+  const rows = await prisma.$queryRawUnsafe<[{ count: string }]>(
+    `SELECT COUNT(*)::text AS count FROM content_items WHERE project_id = $1 AND embedding IS NOT NULL`,
+    projectId
+  );
+  const embeddedCount = parseInt(rows[0]?.count ?? "0", 10);
+
+  if (embeddedCount < MIN_EMBEDDINGS_FOR_CLUSTER) {
+    console.log(
+      `[worker] FULL_ANALYSIS: only ${embeddedCount} embeddings, skipping cluster (min ${MIN_EMBEDDINGS_FOR_CLUSTER})`
+    );
+    cluster = { clustersFound: 0, itemsClustered: 0, errors: 0, skipped: true };
+  } else {
+    try {
+      cluster = await runClusterTopics({ ...payload, jobType: "CLUSTER_TOPICS" });
+    } catch (err) {
+      console.warn(
+        "[worker] FULL_ANALYSIS: cluster step failed, continuing with score:",
+        err instanceof Error ? err.message : String(err)
+      );
+      cluster = { clustersFound: 0, itemsClustered: 0, errors: 1, skipped: false };
+    }
+  }
+
+  // Step 4: Compute score — always runs
+  const score = await runComputeScore({ ...payload, jobType: "COMPUTE_SCORE" });
+
+  return { extract, embed, cluster, score };
+}
+
 // ─── Redis connection ─────────────────────────────────────────────────────────
 
 const redisConnection = (() => {
@@ -868,6 +928,8 @@ const analysisWorker = new Worker<AnalysisJobPayload>(
         resultSummary = await runClusterTopics(payload);
       } else if (payload.jobType === "COMPUTE_SCORE") {
         resultSummary = await runComputeScore(payload);
+      } else if (payload.jobType === "FULL_ANALYSIS") {
+        resultSummary = await runFullAnalysis(payload);
       } else {
         throw new Error(`Unknown analysis job type: ${(payload as { jobType: string }).jobType}`);
       }
@@ -894,7 +956,8 @@ const analysisWorker = new Worker<AnalysisJobPayload>(
           err.message.includes("ECONNREFUSED") ||
           err.message.includes("Engine extract failed") ||
           err.message.includes("Engine embed failed") ||
-          err.message.includes("Engine cluster failed"));
+          err.message.includes("Engine cluster failed") ||
+          err.message.includes("Engine analyze failed"));
 
       const message = isEngineDown
         ? `Engine non raggiungibile: ${err instanceof Error ? err.message : String(err)}`

@@ -1,8 +1,7 @@
 /**
  * POST /api/projects/:id/analysis/start
  *
- * Enqueues a COMPUTE_SCORE job. In Phase 3.6 this will be upgraded to
- * FULL_ANALYSIS (EXTRACT → EMBED → CLUSTER → SCORE pipeline).
+ * Enqueues a FULL_ANALYSIS job (EXTRACT → EMBED → CLUSTER → SCORE pipeline).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
@@ -45,11 +44,11 @@ export async function POST(
   }
 
   const job = await prisma.analysisJob.create({
-    data: { projectId, jobType: "COMPUTE_SCORE", status: "PENDING" },
+    data: { projectId, jobType: "FULL_ANALYSIS", status: "PENDING" },
   });
 
-  await analysisQueue.add("compute-score", {
-    jobType: "COMPUTE_SCORE",
+  await analysisQueue.add("full-analysis", {
+    jobType: "FULL_ANALYSIS",
     projectId,
     userId: user.id,
     analysisJobId: job.id,

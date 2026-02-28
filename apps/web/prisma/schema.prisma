@@ -231,6 +231,7 @@ model ContentItem {
   contentEntities ContentEntity[]
 
   @@unique([projectId, contentHash])
+  @@index([projectId])
   @@index([projectId, sourcePlatform])
   @@index([projectId, status])
   @@index([projectId, contentType])

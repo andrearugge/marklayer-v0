@@ -79,11 +79,19 @@ export type ComputeScorePayload = {
   analysisJobId: string;
 };
 
+export type FullAnalysisPayload = {
+  jobType: "FULL_ANALYSIS";
+  projectId: string;
+  userId: string;
+  analysisJobId: string;
+};
+
 export type AnalysisJobPayload =
   | ExtractEntitiesPayload
   | GenerateEmbeddingsPayload
   | ClusterTopicsPayload
-  | ComputeScorePayload;
+  | ComputeScorePayload
+  | FullAnalysisPayload;
 
 // ─── Connection ───────────────────────────────────────────────────────────────
 
