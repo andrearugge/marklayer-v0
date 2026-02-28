@@ -87,5 +87,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     metadata: { action, count, ids },
   });
 
+  // Mark score as stale — content changed
+  await prisma.projectScore.updateMany({
+    where: { projectId },
+    data: { isStale: true },
+  });
+
   return NextResponse.json({ data: { count, action } });
 }

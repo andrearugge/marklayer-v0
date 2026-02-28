@@ -20,6 +20,7 @@ import { Worker } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { Prisma, SourcePlatform, ContentType } from "@prisma/client";
+// scoring helpers (no @/ alias — relative path for standalone worker process)
 
 // Worker only needs the queue names and types; `import type` is erased at runtime
 // so we avoid instantiating the Queues in this process.
@@ -32,7 +33,10 @@ import type {
   ExtractEntitiesPayload,
   GenerateEmbeddingsPayload,
   ClusterTopicsPayload,
+  ComputeScorePayload,
 } from "../lib/queue";
+import { computeScoreDimensions } from "../lib/scoring";
+import { generateSuggestions } from "../lib/suggestions";
 
 // ─── Prisma (dedicated client for the worker process) ─────────────────────────
 
@@ -648,6 +652,61 @@ async function runClusterTopics(
   return { clustersFound: data.clusters_found, itemsClustered, errors: 0 };
 }
 
+// ─── COMPUTE_SCORE handler ────────────────────────────────────────────────────
+
+import type { ScoreDimensions } from "../lib/scoring";
+
+interface ComputeScoreResult {
+  overall: number;
+  dimensions: ScoreDimensions;
+  suggestionsCount: number;
+}
+
+async function runComputeScore(payload: ComputeScorePayload): Promise<ComputeScoreResult> {
+  const { projectId } = payload;
+
+  // Get project name for suggestions prompt
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { name: true },
+  });
+
+  const scoreResult = await computeScoreDimensions(projectId, prisma);
+  const suggestions = await generateSuggestions(
+    project?.name ?? "",
+    scoreResult.dimensions
+  );
+
+  // Upsert ProjectScore (idempotent)
+  // dimensions/suggestions must be cast to InputJsonValue for Prisma JsonB
+  await prisma.projectScore.upsert({
+    where: { projectId },
+    create: {
+      projectId,
+      overallScore: scoreResult.overall,
+      dimensions: scoreResult.dimensions as unknown as Prisma.InputJsonValue,
+      suggestions: suggestions as unknown as Prisma.InputJsonValue,
+      contentCount: scoreResult.contentCount,
+      isStale: false,
+      computedAt: new Date(),
+    },
+    update: {
+      overallScore: scoreResult.overall,
+      dimensions: scoreResult.dimensions as unknown as Prisma.InputJsonValue,
+      suggestions: suggestions as unknown as Prisma.InputJsonValue,
+      contentCount: scoreResult.contentCount,
+      isStale: false,
+      computedAt: new Date(),
+    },
+  });
+
+  return {
+    overall: scoreResult.overall,
+    dimensions: scoreResult.dimensions,
+    suggestionsCount: suggestions.length,
+  };
+}
+
 // ─── Redis connection ─────────────────────────────────────────────────────────
 
 const redisConnection = (() => {
@@ -807,6 +866,8 @@ const analysisWorker = new Worker<AnalysisJobPayload>(
         resultSummary = await runGenerateEmbeddings(payload);
       } else if (payload.jobType === "CLUSTER_TOPICS") {
         resultSummary = await runClusterTopics(payload);
+      } else if (payload.jobType === "COMPUTE_SCORE") {
+        resultSummary = await runComputeScore(payload);
       } else {
         throw new Error(`Unknown analysis job type: ${(payload as { jobType: string }).jobType}`);
       }

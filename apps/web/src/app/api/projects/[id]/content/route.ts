@@ -218,5 +218,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     metadata: { projectId, title, sourcePlatform, contentType },
   });
 
+  // Mark score as stale — new content added
+  await prisma.projectScore.updateMany({
+    where: { projectId },
+    data: { isStale: true },
+  });
+
   return NextResponse.json({ data: item }, { status: 201 });
 }

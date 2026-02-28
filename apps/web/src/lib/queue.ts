@@ -72,10 +72,18 @@ export type ClusterTopicsPayload = {
   analysisJobId: string;
 };
 
+export type ComputeScorePayload = {
+  jobType: "COMPUTE_SCORE";
+  projectId: string;
+  userId: string;
+  analysisJobId: string;
+};
+
 export type AnalysisJobPayload =
   | ExtractEntitiesPayload
   | GenerateEmbeddingsPayload
-  | ClusterTopicsPayload;
+  | ClusterTopicsPayload
+  | ComputeScorePayload;
 
 // ─── Connection ───────────────────────────────────────────────────────────────
 

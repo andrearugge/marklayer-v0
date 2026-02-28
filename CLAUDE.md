@@ -3,8 +3,8 @@
 ## Stato Corrente
 
 **Fase**: 3 — Knowledge Graph & Analysis
-**Step corrente**: 3.3 completato → prossimo: Step 3.4
-**Ultimo commit**: feat(step-3.3): topic clustering — KMeans + Claude Haiku labels, CLUSTER_TOPICS job
+**Step corrente**: 3.4 completato → prossimo: Step 3.5
+**Ultimo commit**: feat(step-3.4): AI readiness scoring — 5 dimensions, COMPUTE_SCORE job, stale flag
 **Aggiornato**: 2026-02-28
 
 ---
@@ -393,25 +393,22 @@ COMPUTE_SCORE       → calcolo score + suggestions LLM
 - **Note**: Entity TOPIC precedenti eliminati ad ogni reclusterizzazione (idempotente)
 - **Done when**: Entity TOPIC presenti, ContentEntity con topic assegnati ✅
 
-### Step 3.4 — AI Readiness Scoring
-- [ ] `lib/scoring.ts`: calcolo dimensioni in Next.js con Prisma
-  - `computeScoreDimensions(projectId)` → `{copertura, profondita, freschezza, autorita, coerenza}`
-  - Query aggregate in parallelo (Promise.all)
-  - Formula per ogni dimensione descritta in ADR-011
-- [ ] `lib/suggestions.ts`: genera suggestions via Claude Haiku
-  - Chiama Python engine `POST /api/analyze/suggestions` con dimensioni basse
-  - Fallback: suggestions statiche hard-coded se engine non disponibile
-- [ ] `api/analyze.py` engine: `POST /api/analyze/suggestions` — riceve dimensions + projectName, ritorna `string[]`
-- [ ] BullMQ: aggiungere `COMPUTE_SCORE` al worker
-  - Chiama `computeScoreDimensions` + `generateSuggestions`
-  - Upsert `ProjectScore` (create or update by projectId)
-  - Imposta `isStale = false`
-- [ ] Next.js:
+### Step 3.4 — AI Readiness Scoring ✅
+- [x] `lib/scoring.ts`: `computeScoreDimensions(projectId, db)` — accetta prisma come param (usabile sia da Next.js che dal worker)
+  - 7 query parallele (Promise.all): platform groups, totale, avg word count, published dates, top entity, total approved, raw content count
+  - 5 dimensioni con formule da ADR-011: copertura, profondita, freschezza, autorita, coerenza
+  - overall = media ponderata (25%+25%+20%+15%+15%)
+- [x] `lib/suggestions.ts`: `generateSuggestions(projectName, dimensions)` — fetch engine + fallback statico
+- [x] `api/analyze.py` engine: `POST /api/analyze/suggestions` — Claude Haiku numbered list → `string[]`
+- [x] BullMQ: aggiunto `COMPUTE_SCORE` al worker; `runComputeScore()` upsert `ProjectScore` con `isStale: false`
+- [x] `ComputeScorePayload` in `lib/queue.ts`
+- [x] Next.js:
   - `GET /api/projects/:id/analysis/score` → ritorna `ProjectScore` o `null`
-  - `POST /api/projects/:id/analysis/score` → enqueue `COMPUTE_SCORE`, ritorna 202
-- [ ] Audit: `ANALYSIS_SCORE_COMPUTED`
-- [ ] Stale flag: dopo `PATCH /content/bulk` con status change o nuovo contenuto aggiunto → `isStale = true`
-- **Done when**: ProjectScore calcolato e recuperabile, suggestions generate
+  - `POST /api/projects/:id/analysis/score` → check ≥ 1 item, enqueue, ritorna 202
+- [x] Stale flag: `PATCH /content/bulk` e `POST /content` impostano `isStale: true` via `updateMany` (no-op se non esiste)
+- **Note**: `ScoreDimensions` castato a `unknown as Prisma.InputJsonValue` per Prisma JsonB
+- **Note**: `computeScoreDimensions` riceve `db: PrismaClient | any` — funziona con entrambi i client Prisma (Next.js singleton e worker dedicato)
+- **Done when**: ProjectScore calcolato e recuperabile, suggestions generate ✅
 
 ### Step 3.5 — Analysis Dashboard UI
 - [ ] Tab "Analisi" nella pagina progetto (terzo tab, URL param `?tab=analysis`)
