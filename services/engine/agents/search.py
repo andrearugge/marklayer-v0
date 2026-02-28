@@ -140,35 +140,48 @@ class SearchAgent:
         client: httpx.AsyncClient,
         query: str,
         count: int,
+        max_retries: int = 3,
     ) -> tuple[list[dict], str | None]:
         """
-        Call the Brave Search API. Returns (items, error_message).
+        Call the Brave Search API with exponential backoff on 429.
+        Returns (items, error_message).
         items is the raw list from response["web"]["results"].
         """
-        try:
-            resp = await client.get(
-                _BRAVE_URL,
-                params={"q": query, "count": count},
-                headers={
-                    "Accept": "application/json",
-                    "Accept-Encoding": "gzip",
-                    "X-Subscription-Token": settings.brave_search_api_key,
-                },
-            )
-        except httpx.RequestError as exc:
-            return [], str(exc)
+        last_error: str = "unknown error"
 
-        if resp.status_code == 429:
-            return [], "Brave Search rate limit exceeded"
-        if resp.status_code == 401:
-            return [], "Unauthorized — check BRAVE_SEARCH_API_KEY"
-        if resp.status_code == 422:
-            return [], "Unprocessable query"
-        if resp.status_code != 200:
-            return [], f"HTTP {resp.status_code}"
+        for attempt in range(max_retries):
+            try:
+                resp = await client.get(
+                    _BRAVE_URL,
+                    params={"q": query, "count": count},
+                    headers={
+                        "Accept": "application/json",
+                        "Accept-Encoding": "gzip",
+                        "X-Subscription-Token": settings.brave_search_api_key,
+                    },
+                )
+            except httpx.RequestError as exc:
+                return [], str(exc)
 
-        data: dict = resp.json()
+            if resp.status_code == 429:
+                last_error = "Brave Search rate limit exceeded"
+                if attempt < max_retries - 1:
+                    wait = 2**attempt  # 1s → 2s → 4s
+                    await asyncio.sleep(wait)
+                    continue
+                return [], f"{last_error} after {max_retries} attempts"
 
-        # "web" key is absent when there are no results (not an error)
-        web = data.get("web", {})
-        return web.get("results", []), None
+            if resp.status_code == 401:
+                return [], "Unauthorized — check BRAVE_SEARCH_API_KEY"
+            if resp.status_code == 422:
+                return [], "Unprocessable query"
+            if resp.status_code != 200:
+                return [], f"HTTP {resp.status_code}"
+
+            data: dict = resp.json()
+
+            # "web" key is absent when there are no results (not an error)
+            web = data.get("web", {})
+            return web.get("results", []), None
+
+        return [], last_error

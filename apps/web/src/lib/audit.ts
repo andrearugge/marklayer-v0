@@ -11,6 +11,10 @@ export const AUDIT_ACTIONS = {
   PROJECT_CREATED: "project.created",
   PROJECT_UPDATED: "project.updated",
   PROJECT_ARCHIVED: "project.archived",
+  // Discovery
+  DISCOVERY_JOB_STARTED: "discovery.job.started",
+  DISCOVERY_JOB_COMPLETED: "discovery.job.completed",
+  DISCOVERY_JOB_FAILED: "discovery.job.failed",
   // Content
   CONTENT_CREATED: "content.created",
   CONTENT_UPDATED: "content.updated",

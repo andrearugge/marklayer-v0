@@ -3,8 +3,8 @@
 ## Stato Corrente
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2b.5 completato → prossimo: **2b.6 Phase 2b Polish**
-**Ultimo commit**: feat(step-2b.5): discovery review UI — tab, start dialog, status polling, approve/reject
+**Step corrente**: 2b.6 completato → **Fase 2b COMPLETA** → prossimo: Fase 3
+**Ultimo commit**: feat(step-2b.6): phase 2b polish — audit log, retry logic, engine hardening, UI fixes
 **Aggiornato**: 2026-02-28
 
 ---
@@ -114,11 +114,14 @@ Tab "Discovery" nella pagina progetto (`?tab=discovery`):
 - Header azioni cambiano in base al tab (Discovery: "Avvia Discovery"; Content: "Aggiungi", "CSV").
 **Build OK (33 route).**
 
-#### Step 2b.6 — Phase 2b Polish
-- [ ] Error handling crawler (timeout, 404, rate limit), retry logic
-- [ ] UI feedback stati di errore discovery
-- [ ] Audit log per discovery jobs
-- **Done when**: Discovery robusto, errori gestiti gracefully
+#### ✅ Step 2b.6 — Phase 2b Polish
+**Audit log**: `DISCOVERY_JOB_STARTED`, `DISCOVERY_JOB_COMPLETED`, `DISCOVERY_JOB_FAILED` in `lib/audit.ts`; loggati inline nel worker (usa la sua istanza Prisma dedicata) con metadata jobType + resultSummary/error.
+**Worker hardening**: `safeUpdateJob()` wrappa `prisma.discoveryJob.update` — ignora P2025 (record not found); `logAudit()` inline never throws; errori categorizzati (engine down vs errore dati).
+**Python retry logic**:
+- `agents/search.py`: `_call_brave` con `max_retries=3`, exponential backoff 2^attempt secondi su HTTP 429.
+- `agents/crawler.py`: `_fetch_page_with_retry()` wrapper, retry su connection errors e HTTP 5xx (max 2 retry, sleep 1.5s e 3s).
+**UI polish**: `StartDiscoveryDialog` accetta `hasActiveJob` prop — bottone disabilitato con spinner "Discovery in corso…" mentre un job è PENDING/RUNNING; `FetchContentButton` (`fetch-content-button.tsx`) — batch-fetcha rawContent per items con URL ma senza rawContent, mostra conteggio e risultato inline; wired nella tab Discovery del progetto.
+**Build OK (33 route).**
 
 ---
 

@@ -45,9 +45,11 @@ type JobType = "CRAWL_SITE" | "SEARCH_PLATFORM" | "FULL_DISCOVERY";
 export function StartDiscoveryDialog({
   projectId,
   projectDomain,
+  hasActiveJob = false,
 }: {
   projectId: string;
   projectDomain?: string | null;
+  hasActiveJob?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -156,9 +158,18 @@ export function StartDiscoveryDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="default">
-          <Search className="mr-2 h-3.5 w-3.5" />
-          Avvia Discovery
+        <Button size="sm" variant="default" disabled={hasActiveJob}>
+          {hasActiveJob ? (
+            <>
+              <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />
+              Discovery in corso…
+            </>
+          ) : (
+            <>
+              <Search className="mr-2 h-3.5 w-3.5" />
+              Avvia Discovery
+            </>
+          )}
         </Button>
       </DialogTrigger>
 

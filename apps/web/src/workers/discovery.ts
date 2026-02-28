@@ -31,6 +31,43 @@ import type { DiscoveryJobPayload, CrawlSitePayload, SearchPlatformPayload } fro
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
 
+// ─── Audit logging (inline — avoids double Prisma singleton) ─────────────────
+
+async function logAudit(
+  action: string,
+  actorId: string,
+  projectId: string,
+  metadata?: Record<string, unknown>
+): Promise<void> {
+  try {
+    await prisma.auditLog.create({
+      data: {
+        action,
+        actorId,
+        targetId: projectId,
+        metadata: metadata as Prisma.InputJsonValue | undefined,
+      },
+    });
+  } catch (err) {
+    console.error("[worker] Audit log failed:", err);
+  }
+}
+
+// ─── Safe DB update (guard against record-not-found on stale jobs) ────────────
+
+async function safeUpdateJob(
+  id: string,
+  data: Parameters<typeof prisma.discoveryJob.update>[0]["data"]
+): Promise<void> {
+  try {
+    await prisma.discoveryJob.update({ where: { id }, data });
+  } catch (err) {
+    // P2025 = record not found; ignore silently, log everything else
+    const code = (err as { code?: string }).code;
+    if (code !== "P2025") console.error("[worker] DB update failed:", err);
+  }
+}
+
 // ─── Engine config ────────────────────────────────────────────────────────────
 
 const ENGINE_URL = process.env.ENGINE_URL ?? "http://localhost:8000";
@@ -273,10 +310,8 @@ const worker = new Worker<DiscoveryJobPayload>(
     );
 
     // Mark as RUNNING
-    await prisma.discoveryJob.update({
-      where: { id: discoveryJobId },
-      data: { status: "RUNNING", startedAt: new Date() },
-    });
+    await safeUpdateJob(discoveryJobId, { status: "RUNNING", startedAt: new Date() });
+    await logAudit("discovery.job.started", userId, projectId, { jobType: payload.jobType, discoveryJobId });
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -321,27 +356,43 @@ const worker = new Worker<DiscoveryJobPayload>(
         };
       }
 
-      await prisma.discoveryJob.update({
-        where: { id: discoveryJobId },
-        data: {
-          status: "COMPLETED",
-          completedAt: new Date(),
-          resultSummary: resultSummary as Prisma.InputJsonValue,
-        },
+      await safeUpdateJob(discoveryJobId, {
+        status: "COMPLETED",
+        completedAt: new Date(),
+        resultSummary: resultSummary as Prisma.InputJsonValue,
+      });
+      await logAudit("discovery.job.completed", userId, projectId, {
+        jobType: payload.jobType,
+        discoveryJobId,
+        ...resultSummary,
       });
 
       console.log(`[worker] Job ${job.id} completed:`, JSON.stringify(resultSummary));
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const isEngineDown =
+        err instanceof Error &&
+        (err.message.includes("fetch failed") ||
+          err.message.includes("ECONNREFUSED") ||
+          err.message.includes("Engine crawl failed") ||
+          err.message.includes("Engine search failed"));
+
+      const message = isEngineDown
+        ? `Engine non raggiungibile: ${err instanceof Error ? err.message : String(err)}`
+        : err instanceof Error
+        ? err.message
+        : String(err);
+
       console.error(`[worker] Job ${job.id} failed:`, message);
 
-      await prisma.discoveryJob.update({
-        where: { id: discoveryJobId },
-        data: {
-          status: "FAILED",
-          completedAt: new Date(),
-          errorMessage: message,
-        },
+      await safeUpdateJob(discoveryJobId, {
+        status: "FAILED",
+        completedAt: new Date(),
+        errorMessage: message,
+      });
+      await logAudit("discovery.job.failed", userId, projectId, {
+        jobType: payload.jobType,
+        discoveryJobId,
+        error: message,
       });
 
       throw err; // re-throw so BullMQ marks the job as failed

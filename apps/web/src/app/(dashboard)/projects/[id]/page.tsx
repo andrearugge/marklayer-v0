@@ -20,6 +20,7 @@ import { ContentTable } from "./content-table";
 import { StartDiscoveryDialog } from "./start-discovery-dialog";
 import { DiscoveryJobStatus } from "./discovery-job-status";
 import { DiscoveryReview } from "./discovery-review";
+import { FetchContentButton } from "./fetch-content-button";
 import type { SerializedDiscoveryJob } from "./discovery-job-status";
 import type { DiscoveredItem } from "./discovery-review";
 import { Badge } from "@/components/ui/badge";
@@ -194,9 +195,10 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
   let latestJob: SerializedDiscoveryJob | null = null;
   let jobHistory: SerializedDiscoveryJob[] = [];
   let discoveredItems: DiscoveredItem[] = [];
+  let unfetchedCount = 0;
 
   if (activeTab === "discovery") {
-    const [latestRaw, historyRaw, discoveredRaw] = await Promise.all([
+    const [latestRaw, historyRaw, discoveredRaw, unfetchedRaw] = await Promise.all([
       prisma.discoveryJob.findFirst({
         where: { projectId: id },
         orderBy: { createdAt: "desc" },
@@ -215,7 +217,13 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
         orderBy: { createdAt: "desc" },
         take: 20,
       }),
+      // Items with URL but no rawContent (can be batch-fetched)
+      prisma.contentItem.count({
+        where: { projectId: id, url: { not: null }, rawContent: null, status: { not: "REJECTED" } },
+      }),
     ]);
+
+    unfetchedCount = unfetchedRaw;
 
     function serializeJob(j: typeof latestRaw): SerializedDiscoveryJob | null {
       if (!j) return null;
@@ -287,6 +295,10 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
                 <StartDiscoveryDialog
                   projectId={project.id}
                   projectDomain={project.domain}
+                  hasActiveJob={
+                    latestJob !== null &&
+                    (latestJob.status === "PENDING" || latestJob.status === "RUNNING")
+                  }
                 />
               ) : (
                 <>
@@ -459,7 +471,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
 
           {/* Discovered items for review */}
           <section className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-base font-semibold">
                 Da revisionare
                 {(statusMap["DISCOVERED"] ?? 0) > 0 && (
@@ -468,6 +480,7 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
                   </span>
                 )}
               </h2>
+              <FetchContentButton projectId={id} unfetchedCount={unfetchedCount} />
             </div>
             <DiscoveryReview
               items={discoveredItems}

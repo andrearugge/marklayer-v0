@@ -141,7 +141,7 @@ class CrawlerAgent:
 
                 await self._rate_wait()
 
-                page_data, links, error = await self._fetch_page(client, url)
+                page_data, links, error = await self._fetch_page_with_retry(client, url)
 
                 if error:
                     result.errors.append({"url": url, "error": error})
@@ -161,6 +161,28 @@ class CrawlerAgent:
                                     queue.append((link, depth + 1))
 
         return result
+
+    async def _fetch_page_with_retry(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        max_retries: int = 2,
+    ) -> tuple[PageData | None, list[str], str | None]:
+        """Retry wrapper around _fetch_page for transient network/server errors."""
+        for attempt in range(max_retries + 1):
+            page_data, links, error = await self._fetch_page(client, url)
+            if error is None or attempt >= max_retries:
+                return page_data, links, error
+            # Only retry on connection errors or 5xx responses
+            is_retryable = (
+                "connection" in error.lower()
+                or "timed out" in error.lower()
+                or error.startswith("HTTP 5")
+            )
+            if not is_retryable:
+                return page_data, links, error
+            await asyncio.sleep(1.5 * (attempt + 1))  # 1.5s, 3s
+        return None, [], error  # type: ignore[return-value]
 
     async def _fetch_page(
         self, client: httpx.AsyncClient, url: str
