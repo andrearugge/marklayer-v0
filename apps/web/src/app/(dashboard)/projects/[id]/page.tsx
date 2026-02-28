@@ -21,8 +21,18 @@ import { StartDiscoveryDialog } from "./start-discovery-dialog";
 import { DiscoveryJobStatus } from "./discovery-job-status";
 import { DiscoveryReview } from "./discovery-review";
 import { FetchContentButton } from "./fetch-content-button";
+import { AnalysisJobStatus } from "./analysis-job-status";
+import { ScoreCard } from "./score-card";
+import { EntitiesPanel } from "./entities-panel";
+import { TopicsPanel } from "./topics-panel";
+import { ContentHealthCard } from "./content-health-card";
 import type { SerializedDiscoveryJob } from "./discovery-job-status";
 import type { DiscoveredItem } from "./discovery-review";
+import type { SerializedAnalysisJob } from "./analysis-job-status";
+import type { SerializedProjectScore } from "./score-card";
+import type { EntityItem } from "./entities-panel";
+import type { TopicItem } from "./topics-panel";
+import type { ContentHealth } from "./content-health-card";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Globe, FileText, ArrowLeft, History } from "lucide-react";
@@ -81,7 +91,12 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
   if (!project) notFound();
 
   const rawSearch = await searchParams;
-  const activeTab = rawSearch.tab === "discovery" ? "discovery" : "content";
+  const activeTab =
+    rawSearch.tab === "discovery"
+      ? "discovery"
+      : rawSearch.tab === "analysis"
+      ? "analysis"
+      : "content";
   const isArchived = project.status === "ARCHIVED";
 
   // ─── Stats (always fetched) ────────────────────────────────────────────────
@@ -245,6 +260,122 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     }));
   }
 
+  // ─── Analysis tab data ─────────────────────────────────────────────────────
+
+  let projectScore: SerializedProjectScore | null = null;
+  let latestAnalysisJob: SerializedAnalysisJob | null = null;
+  let entities: EntityItem[] = [];
+  let entityPaginationTotal = 0;
+  let entityTotalPages = 0;
+  let entityPage = 1;
+  let entityType = "ALL";
+  let topics: TopicItem[] = [];
+  let contentHealth: ContentHealth = {
+    total: 0, withRawContent: 0, avgWordCount: null,
+    approved: 0, discovered: 0, rejected: 0, archived: 0,
+  };
+
+  if (activeTab === "analysis") {
+    entityPage = Math.max(1, Number(rawSearch.entityPage) || 1);
+    entityType = typeof rawSearch.entityType === "string" ? rawSearch.entityType : "ALL";
+    const entityLimit = 20;
+
+    const entityWhere = {
+      projectId: id,
+      ...(entityType && entityType !== "ALL" ? { type: entityType as never } : {}),
+      NOT: { type: "TOPIC" as never },
+    };
+
+    const [
+      rawScore,
+      rawLatestJob,
+      rawEntities,
+      rawEntityTotal,
+      rawTopics,
+      rawHealthStats,
+      rawWordCount,
+    ] = await Promise.all([
+      prisma.projectScore.findUnique({ where: { projectId: id } }),
+      prisma.analysisJob.findFirst({
+        where: { projectId: id },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.entity.findMany({
+        where: entityWhere,
+        orderBy: { frequency: "desc" },
+        skip: (entityPage - 1) * entityLimit,
+        take: entityLimit,
+        select: { id: true, label: true, type: true, frequency: true },
+      }),
+      prisma.entity.count({ where: entityWhere }),
+      prisma.entity.findMany({
+        where: { projectId: id, type: "TOPIC" },
+        orderBy: { frequency: "desc" },
+        select: {
+          id: true, label: true, frequency: true,
+          contentEntities: {
+            select: { content: { select: { id: true, title: true } } },
+            take: 3,
+            orderBy: { salience: "desc" },
+          },
+        },
+      }),
+      prisma.contentItem.groupBy({
+        by: ["status"],
+        where: { projectId: id },
+        _count: { _all: true },
+      }),
+      prisma.contentItem.aggregate({
+        where: { projectId: id, wordCount: { not: null } },
+        _avg: { wordCount: true },
+      }),
+    ]);
+
+    const withRawCount = await prisma.contentItem.count({
+      where: { projectId: id, rawContent: { not: null } },
+    });
+
+    const statusHealthMap = Object.fromEntries(
+      rawHealthStats.map((r) => [r.status, r._count._all])
+    ) as Record<string, number>;
+
+    projectScore = rawScore
+      ? {
+          id: rawScore.id,
+          overallScore: rawScore.overallScore,
+          dimensions: rawScore.dimensions as unknown as SerializedProjectScore["dimensions"],
+          suggestions: rawScore.suggestions as string[] | null,
+          contentCount: rawScore.contentCount,
+          isStale: rawScore.isStale,
+          computedAt: rawScore.computedAt.toISOString(),
+        }
+      : null;
+
+    latestAnalysisJob = rawLatestJob
+      ? {
+          ...rawLatestJob,
+          resultSummary: rawLatestJob.resultSummary as Record<string, unknown> | null,
+          startedAt: rawLatestJob.startedAt?.toISOString() ?? null,
+          completedAt: rawLatestJob.completedAt?.toISOString() ?? null,
+          createdAt: rawLatestJob.createdAt.toISOString(),
+        }
+      : null;
+
+    entities = rawEntities.map((e) => ({ ...e, type: e.type as string }));
+    entityPaginationTotal = rawEntityTotal;
+    entityTotalPages = Math.ceil(rawEntityTotal / entityLimit);
+    topics = rawTopics as TopicItem[];
+    contentHealth = {
+      total: totalCount,
+      withRawContent: withRawCount,
+      avgWordCount: rawWordCount._avg.wordCount ?? null,
+      approved: statusHealthMap["APPROVED"] ?? 0,
+      discovered: statusHealthMap["DISCOVERED"] ?? 0,
+      rejected: statusHealthMap["REJECTED"] ?? 0,
+      archived: statusHealthMap["ARCHIVED"] ?? 0,
+    };
+  }
+
   return (
     <div className="space-y-6">
       {/* ── Header ── */}
@@ -354,6 +485,16 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
                 {statusMap["DISCOVERED"]}
               </span>
             )}
+          </Link>
+          <Link
+            href={`/projects/${id}?tab=analysis`}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              activeTab === "analysis"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Analisi
           </Link>
         </nav>
       </div>
@@ -548,6 +689,40 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
               </div>
             </section>
           )}
+        </div>
+      )}
+
+      {/* ══ ANALYSIS TAB ══════════════════════════════════════════════════════════ */}
+      {activeTab === "analysis" && (
+        <div className="space-y-6">
+          {/* Current job status (auto-polling) */}
+          {latestAnalysisJob && (
+            <AnalysisJobStatus
+              projectId={id}
+              initialJob={latestAnalysisJob}
+            />
+          )}
+
+          {/* Score + Entities + Topics grid */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <ScoreCard
+              projectId={id}
+              score={projectScore}
+              hasContent={totalCount > 0}
+            />
+            <ContentHealthCard health={contentHealth} />
+          </div>
+
+          <EntitiesPanel
+            projectId={id}
+            entities={entities}
+            activeType={entityType}
+            page={entityPage}
+            totalPages={entityTotalPages}
+            total={entityPaginationTotal}
+          />
+
+          <TopicsPanel topics={topics} />
         </div>
       )}
 

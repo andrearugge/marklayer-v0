@@ -3,8 +3,8 @@
 ## Stato Corrente
 
 **Fase**: 3 — Knowledge Graph & Analysis
-**Step corrente**: 3.4 completato → prossimo: Step 3.5
-**Ultimo commit**: feat(step-3.4): AI readiness scoring — 5 dimensions, COMPUTE_SCORE job, stale flag
+**Step corrente**: 3.5 completato → prossimo: Step 3.6
+**Ultimo commit**: feat(step-3.5): analysis dashboard UI — score card, entities panel, topics panel, content health
 **Aggiornato**: 2026-02-28
 
 ---
@@ -410,33 +410,35 @@ COMPUTE_SCORE       → calcolo score + suggestions LLM
 - **Note**: `computeScoreDimensions` riceve `db: PrismaClient | any` — funziona con entrambi i client Prisma (Next.js singleton e worker dedicato)
 - **Done when**: ProjectScore calcolato e recuperabile, suggestions generate ✅
 
-### Step 3.5 — Analysis Dashboard UI
-- [ ] Tab "Analisi" nella pagina progetto (terzo tab, URL param `?tab=analysis`)
-- [ ] `analysis-job-status.tsx`: polling ogni 4s su `GET /analysis/status` mentre PENDING/RUNNING
-- [ ] `score-card.tsx`:
+### Step 3.5 — Analysis Dashboard UI ✅
+- [x] Tab "Analisi" nella pagina progetto (terzo tab, URL param `?tab=analysis`)
+- [x] `analysis-job-status.tsx`: polling ogni 4s su `GET /analysis/status` mentre PENDING/RUNNING
+- [x] `score-card.tsx`:
   - Score globale: numero grande + colore (< 40 rosso, 40-70 giallo, > 70 verde)
   - 5 barre dimensione: label + valore + `<Progress>` shadcn
   - Badge "Score non aggiornato" se `isStale = true`
   - Bottone "Avvia Analisi" → POST `/analysis/start`
   - Data ultimo calcolo
   - Lista suggestions (icona ⚠ + testo)
-- [ ] `entities-panel.tsx`:
+- [x] `entities-panel.tsx`:
   - Tabs per tipo: TUTTI / BRAND / PERSON / ORG / PRODUCT / LOCATION
   - Lista con label, badge tipo, contatore frequenza
   - Paginazione (20 per pagina)
   - GET `/analysis/entities?type=PERSON&page=1`
-- [ ] `topics-panel.tsx`:
+- [x] `topics-panel.tsx`:
   - Lista topic (Entity di tipo TOPIC) con content count
   - Titoli sample (max 3) per topic
   - GET `/analysis/topics`
-- [ ] `content-health-card.tsx`:
+- [x] `content-health-card.tsx`:
   - % contenuti con rawContent estratto
   - Word count medio
   - % per status (barre colorate)
   - Calcolato server-side nella page
-- [ ] Stato vuoto: "Nessuna analisi eseguita — clicca Avvia Analisi"
-- [ ] Dati caricati server-side condizionalmente se `?tab=analysis` (stesso pattern Discovery)
-- **Done when**: tab Analisi navigabile, score + entities + topics visibili, bottone avvia funziona
+- [x] Stato vuoto: "Nessuna analisi eseguita — clicca Avvia Analisi"
+- [x] Dati caricati server-side condizionalmente se `?tab=analysis` (stesso pattern Discovery)
+- **Note**: `ContentEntity.content` (non `contentItem`) è il nome relazione corretto nel schema Prisma
+- **Note**: `SerializedProjectScore` non include `projectId`, `createdAt`, `updatedAt` — serializzato esplicitamente
+- **Done when**: tab Analisi navigabile, score + entities + topics visibili, bottone avvia funziona ✅
 
 ### Step 3.6 — Phase 3 Polish
 - [ ] `FULL_ANALYSIS` orchestration: EXTRACT → EMBED → CLUSTER → SCORE in sequenza nel worker
