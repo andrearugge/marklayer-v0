@@ -30,6 +30,7 @@ import type {
   SearchPlatformPayload,
   AnalysisJobPayload,
   ExtractEntitiesPayload,
+  GenerateEmbeddingsPayload,
 } from "../lib/queue";
 
 // ─── Prisma (dedicated client for the worker process) ─────────────────────────
@@ -422,6 +423,100 @@ async function runExtractEntities(
   return { processed: items.length, entitiesFound, errors };
 }
 
+// ─── GENERATE_EMBEDDINGS handler ─────────────────────────────────────────────
+
+interface EmbedItemResponse {
+  id: string;
+  embedding: number[];
+  error: string | null;
+}
+
+interface EngineEmbedResponse {
+  results: EmbedItemResponse[];
+  dimensions: number;
+}
+
+interface EmbedResult {
+  processed: number;
+  errors: number;
+}
+
+const EMBED_BATCH_SIZE = 100; // items per engine request
+
+async function runGenerateEmbeddings(
+  payload: GenerateEmbeddingsPayload
+): Promise<EmbedResult> {
+  const { projectId } = payload;
+
+  // Fetch items that have rawContent but no embedding yet.
+  // Prisma omits the `embedding` (Unsupported type) from where input — use raw SQL.
+  const items = await prisma.$queryRawUnsafe<
+    { id: string; title: string; raw_content: string }[]
+  >(
+    `SELECT id, title, raw_content
+     FROM content_items
+     WHERE project_id = $1
+       AND raw_content IS NOT NULL
+       AND embedding IS NULL`,
+    projectId
+  );
+
+  if (items.length === 0) {
+    return { processed: 0, errors: 0 };
+  }
+
+  let processed = 0;
+  let errors = 0;
+
+  // Process in batches
+  for (let i = 0; i < items.length; i += EMBED_BATCH_SIZE) {
+    const batch = items.slice(i, i + EMBED_BATCH_SIZE);
+
+    const engineRes = await fetch(`${ENGINE_URL}/api/embed/batch`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-engine-api-key": ENGINE_API_KEY,
+      },
+      body: JSON.stringify({
+        items: batch.map((item) => ({
+          id: item.id,
+          // Combine title + content for richer embedding
+          text: `${item.title}. ${(item.raw_content ?? "").slice(0, 3500)}`,
+        })),
+      }),
+      signal: AbortSignal.timeout(300_000), // 5 min per batch
+    });
+
+    if (!engineRes.ok) {
+      const detail = await engineRes.json().catch(() => ({}));
+      throw new Error(
+        `Engine embed failed (${engineRes.status}): ${JSON.stringify(detail)}`
+      );
+    }
+
+    const data = (await engineRes.json()) as EngineEmbedResponse;
+
+    for (const result of data.results) {
+      if (result.error || result.embedding.length === 0) {
+        errors++;
+        continue;
+      }
+
+      // pgvector requires raw SQL since Prisma doesn't support the vector type
+      const embeddingStr = `[${result.embedding.join(",")}]`;
+      await prisma.$executeRawUnsafe(
+        `UPDATE content_items SET embedding = $1::vector WHERE id = $2`,
+        embeddingStr,
+        result.id
+      );
+      processed++;
+    }
+  }
+
+  return { processed, errors };
+}
+
 // ─── Redis connection ─────────────────────────────────────────────────────────
 
 const redisConnection = (() => {
@@ -577,6 +672,8 @@ const analysisWorker = new Worker<AnalysisJobPayload>(
 
       if (payload.jobType === "EXTRACT_ENTITIES") {
         resultSummary = await runExtractEntities(payload);
+      } else if (payload.jobType === "GENERATE_EMBEDDINGS") {
+        resultSummary = await runGenerateEmbeddings(payload);
       } else {
         throw new Error(`Unknown analysis job type: ${(payload as { jobType: string }).jobType}`);
       }

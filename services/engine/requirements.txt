@@ -22,3 +22,6 @@ redis==5.2.1
 
 # AI / LLM (Fase 3+)
 anthropic==0.42.0
+
+# Embeddings (Fase 3+) — ONNX runtime, no PyTorch required (~200 MB Docker layer)
+fastembed==0.4.2

@@ -46,6 +46,8 @@ services:
       ENGINE_API_KEY: ${ENGINE_API_KEY:-changeme-in-production}
       ALLOWED_ORIGINS: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+    volumes:
+      - fastembed_models:/app/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,3 +63,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  fastembed_models:

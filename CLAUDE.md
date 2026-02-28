@@ -3,8 +3,8 @@
 ## Stato Corrente
 
 **Fase**: 3 — Knowledge Graph & Analysis
-**Step corrente**: 3.1 completato → prossimo: Step 3.2
-**Ultimo commit**: feat(step-3.1): entity extraction pipeline — Claude Haiku, EXTRACT_ENTITIES job, analysis worker
+**Step corrente**: 3.2 completato → prossimo: Step 3.3
+**Ultimo commit**: feat(step-3.2): embedding generation — fastembed ONNX, GENERATE_EMBEDDINGS job, pgvector update
 **Aggiornato**: 2026-02-28
 
 ---
@@ -351,25 +351,25 @@ COMPUTE_SCORE       → calcolo score + suggestions LLM
 - [x] Audit: `ANALYSIS_JOB_STARTED`, `ANALYSIS_JOB_COMPLETED`, `ANALYSIS_JOB_FAILED` in `lib/audit.ts`
 - **Done when**: content items APPROVED hanno Entity estratte, ContentEntity presenti nel DB ✅
 
-### Step 3.2 — Embedding Generation
-- [ ] `agents/embedder.py`: `EmbedderAgent`
+### Step 3.2 — Embedding Generation ✅
+- [x] `agents/embedder.py`: `EmbedderAgent`
   - `fastembed.TextEmbedding("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")`
   - Singleton con lazy loading (`_model: TextEmbedding | None = None`)
   - Input: `[{id, text}]`; testo = `title + ". " + rawContent[:2000]`
   - Output: `[{id, embedding: list[float]}]`
   - Batch interno: `model.embed(texts, batch_size=32)`
-- [ ] `api/embed.py`: `POST /api/embed/batch` — body `[{id, text}]`, response `[{id, embedding}]`
-- [ ] `requirements.txt`: aggiungi `fastembed==0.4.2`
-- [ ] BullMQ: aggiungere `GENERATE_EMBEDDINGS` al worker
-  - Fetch content items con `rawContent IS NOT NULL` ma `embedding IS NULL`
-  - Batch da 32 alla volta verso engine
-  - Update via `prisma.$executeRaw`: `UPDATE content_items SET embedding = $1::vector WHERE id = $2`
+- [x] `api/embed.py`: `POST /api/embed/batch` — body `[{id, text}]`, response `[{id, embedding}]`
+- [x] `requirements.txt`: aggiungi `fastembed==0.4.2`
+- [x] BullMQ: aggiungere `GENERATE_EMBEDDINGS` al worker
+  - Fetch content items con `rawContent IS NOT NULL` ma `embedding IS NULL` (`$queryRawUnsafe`)
+  - Batch da 100 alla volta verso engine
+  - Update via `prisma.$executeRawUnsafe`: `UPDATE content_items SET embedding = $1::vector WHERE id = $2`
   - `resultSummary`: `{processed, errors}`
-- [ ] Next.js: `POST /api/projects/:id/analysis/embed` → crea `AnalysisJob` + enqueue
-- [ ] Audit: `ANALYSIS_EMBED_STARTED`, `ANALYSIS_EMBED_COMPLETED`
-- [ ] Rebuild Docker image (fastembed aggiunto)
-- **Note**: `fastembed` scarica il modello ONNX al primo avvio (~90 MB); usare volume Docker per persistenza
-- **Done when**: content items con rawContent hanno vettore embedding; similarity query via `$queryRaw` funziona
+- [x] Next.js: `POST /api/projects/:id/analysis/embed` → crea `AnalysisJob` + enqueue
+- [x] Rebuild Docker image (fastembed aggiunto), volume `fastembed_models` per persistenza modello ONNX
+- **Note**: `fastembed` scarica il modello ONNX al primo avvio (~90 MB); volume Docker `fastembed_models:/app/models`
+- **Note**: Prisma esclude i campi `Unsupported` dai tipi generati → tutte le operazioni embedding via `$queryRawUnsafe`/`$executeRawUnsafe`
+- **Done when**: content items con rawContent hanno vettore embedding; similarity query via `$queryRaw` funziona ✅
 
 ### Step 3.3 — Topic Clustering
 - [ ] `agents/clusterer.py`: `TopicClusterer`
