@@ -3,8 +3,8 @@
 ## Stato Corrente
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2b.4 completato → prossimo: **2b.5 Discovery Review UI**
-**Ultimo commit**: feat(step-2b.4): discovery job orchestration — BullMQ queue + worker + API
+**Step corrente**: 2b.5 completato → prossimo: **2b.6 Phase 2b Polish**
+**Ultimo commit**: feat(step-2b.5): discovery review UI — tab, start dialog, status polling, approve/reject
 **Aggiornato**: 2026-02-28
 
 ---
@@ -104,11 +104,15 @@ API Next.js:
 - `GET /api/projects/:id/discovery/history` — lista paginata job
 Scripts: `npm run worker` (root + apps/web). **Build OK (33 route).**
 
-#### Step 2b.5 — Discovery Review UI ← PROSSIMO
-- [ ] Tab "Discovery" nel progetto: bottone start job, stato corrente, storico
-- [ ] Lista risultati `DISCOVERED`: card titolo/URL/piattaforma/snippet
-- [ ] Azioni: Approve, Reject, Preview; bulk approve/reject
-- **Done when**: Flow discovery → review → approve/reject funzionante
+#### ✅ Step 2b.5 — Discovery Review UI
+Tab "Discovery" nella pagina progetto (`?tab=discovery`):
+- `start-discovery-dialog.tsx`: form per avviare job (CRAWL_SITE / SEARCH_PLATFORM / FULL_DISCOVERY), selezione piattaforme con checkbox, config crawl opzionale.
+- `discovery-job-status.tsx`: card con status corrente, polling ogni 3s se PENDING/RUNNING (usa `GET /status`), mostra `resultSummary` dettagliato; `router.refresh()` al completamento.
+- `discovery-review.tsx`: lista DISCOVERED (max 20), approve/reject per item, bulk approve/reject con AlertDialog di conferma; "vedi tutti" link al content tab filtrato.
+- Storico job (ultimi 5): tabella tipo/status/date/risultati renderizzata server-side.
+- Tab nav URL-driven (`?tab=` param), dati fetchati condizionalmente per tab attivo.
+- Header azioni cambiano in base al tab (Discovery: "Avvia Discovery"; Content: "Aggiungi", "CSV").
+**Build OK (33 route).**
 
 #### Step 2b.6 — Phase 2b Polish
 - [ ] Error handling crawler (timeout, 404, rate limit), retry logic
