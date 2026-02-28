@@ -3,8 +3,8 @@
 ## Stato Corrente
 
 **Fase**: 2 — Content Discovery
-**Step corrente**: 2b.3 completato → prossimo: **2b.4 Discovery Job Orchestration**
-**Ultimo commit**: feat(step-2b.3): content fetching & extraction agent
+**Step corrente**: 2b.4 completato → prossimo: **2b.5 Discovery Review UI**
+**Ultimo commit**: feat(step-2b.4): discovery job orchestration — BullMQ queue + worker + API
 **Aggiornato**: 2026-02-28
 
 ---
@@ -95,14 +95,16 @@ Next.js: `POST /api/projects/:id/discovery/search` → mappa platform → `Sourc
 `api/crawl.py`: `POST /api/crawl/extract` — fino a 50 URL/request, errori isolati per URL.
 Next.js: `POST /api/projects/:id/content/fetch` — trova items con URL ma senza `rawContent`, chiama engine in batch da 20, aggiorna `rawContent`/`wordCount`/`excerpt`/`lastCrawledAt`/`publishedAt`.
 
-#### Step 2b.4 — Discovery Job Orchestration ← PROSSIMO
-- [ ] BullMQ job queue: tipi `CRAWL_SITE`, `SEARCH_PLATFORM`, `FULL_DISCOVERY`
-- [ ] Tracking in tabella `DiscoveryJob`
-- [ ] API Next.js: `POST .../discovery/start`, `GET .../status`, `GET .../history`
-- [ ] Progress tracking (percentuale/conteggio) durante esecuzione
-- **Done when**: Job avviabili, tracciabili, con stato persistente
+#### ✅ Step 2b.4 — Discovery Job Orchestration
+`lib/queue.ts`: BullMQ `Queue<DiscoveryJobPayload>`, tipi `CRAWL_SITE | SEARCH_PLATFORM | FULL_DISCOVERY`, Redis connection da `REDIS_URL`.
+`workers/discovery.ts`: processo standalone (`npm run worker`), crea Prisma client dedicato, gestisce i 3 job type, aggiorna `DiscoveryJob` PENDING → RUNNING → COMPLETED/FAILED + `resultSummary`.
+API Next.js:
+- `POST /api/projects/:id/discovery/start` — valida, crea `DiscoveryJob` (PENDING), enqueue BullMQ, 202
+- `GET /api/projects/:id/discovery/status` — ultimo job del progetto
+- `GET /api/projects/:id/discovery/history` — lista paginata job
+Scripts: `npm run worker` (root + apps/web). **Build OK (33 route).**
 
-#### Step 2b.5 — Discovery Review UI
+#### Step 2b.5 — Discovery Review UI ← PROSSIMO
 - [ ] Tab "Discovery" nel progetto: bottone start job, stato corrente, storico
 - [ ] Lista risultati `DISCOVERED`: card titolo/URL/piattaforma/snippet
 - [ ] Azioni: Approve, Reject, Preview; bulk approve/reject
