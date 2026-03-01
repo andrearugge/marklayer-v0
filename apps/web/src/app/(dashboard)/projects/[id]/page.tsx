@@ -33,7 +33,6 @@ import { SemanticSearchPanel } from "./semantic-search-panel";
 import { BriefsPanel } from "./briefs-panel";
 import type { BriefItem } from "./briefs-panel";
 import { GenerateBriefsButton } from "./generate-briefs-button";
-import { ChatPanel } from "./chat-panel";
 import type { SerializedDiscoveryJob } from "./discovery-job-status";
 import type { DiscoveredItem } from "./discovery-review";
 import type { SerializedAnalysisJob } from "./analysis-job-status";
@@ -106,8 +105,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
       ? "analysis"
       : rawSearch.tab === "briefs"
       ? "briefs"
-      : rawSearch.tab === "chat"
-      ? "chat"
       : "content";
   const isArchived = project.status === "ARCHIVED";
 
@@ -643,16 +640,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
           >
             Brief
           </Link>
-          <Link
-            href={`/projects/${id}?tab=chat`}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-              activeTab === "chat"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Chat AI
-          </Link>
         </nav>
       </div>
 
@@ -941,19 +928,6 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
             initialTotal={briefsTotal}
             activeStatus={briefsActiveStatus}
           />
-        </div>
-      )}
-
-      {/* ══ CHAT TAB ══════════════════════════════════════════════════════════════ */}
-      {activeTab === "chat" && (
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold">Chat AI</h2>
-            <p className="text-xs text-muted-foreground">
-              Fai domande strategiche sul tuo content portfolio. L&apos;assistente conosce score, entità, gap e contenuti rilevanti.
-            </p>
-          </div>
-          <ChatPanel projectId={id} />
         </div>
       )}
 

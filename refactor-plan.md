@@ -24,9 +24,8 @@ Basato su `refactor.md`. Branch: `refactor`.
 | — | `/projects/[id]/actions` | Nuovo: azioni correttive |
 | — | `/projects/[id]/settings` | Nuovo: impostazioni progetto |
 
-> **Nota Chat**: `refactor.md` non menziona il tab Chat. Il piano prevede di conservarlo
-> come pannello accessibile da `/projects/[id]/analysis` (pulsante flottante o sezione
-> collassabile) anziché eliminarlo. Da confermare.
+> **Chat**: il tab Chat è stato **rimosso** dalla pagina progetto (non ha senso in quel
+> contesto senza storico). Verrà reintrodotto come sezione globale `/chat` — vedi § Chat.
 
 ### Sidebar globale (quando NON si è dentro un progetto)
 
@@ -393,6 +392,77 @@ la tabella progetti.
   tutte le route sono implementate e testate
 - [ ] **17.4** Verificare `loading.tsx` per ogni nuova route (copyare quello esistente)
 - [ ] **17.5** Verificare `error.tsx` per ogni nuova route
+
+---
+
+---
+
+## Chat — Feature Futura (`/chat`)
+
+> **Priorità: bassa** — non fa parte del refactor corrente.
+> Il tab Chat è stato rimosso dalla pagina progetto su questo branch.
+
+### Visione
+
+La chat diventa una sezione globale cross-progetto, con storico conversazioni
+per utente (pattern ChatGPT/Claude):
+
+```
+/chat              → listing conversazioni (tutte, ordinate per data)
+/chat/new          → nuova conversazione (step 1: seleziona progetto)
+/chat/[chatId]     → conversazione specifica con storico messaggi
+```
+
+### Flow utente
+
+1. Utente va su `/chat`
+2. Vede lista chat precedenti per utente (con progetto associato, data, anteprima ultimo messaggio)
+3. Clicca "+ Nuova chat" → seleziona progetto dall'elenco → avvia la chat
+4. L'assistente ha context RAG sul progetto selezionato (score + entità + gap + contenuti)
+5. Lo storico è persistito nel DB
+
+### Schema DB (da aggiungere in futuro)
+
+```sql
+ChatSession {
+  id          String   @id @default(cuid())
+  userId      String
+  projectId   String
+  title       String?  -- auto-generato dal primo messaggio
+  createdAt   DateTime
+  updatedAt   DateTime
+  messages    ChatMessage[]
+}
+
+ChatMessage {
+  id          String   @id @default(cuid())
+  sessionId   String
+  role        String   -- "user" | "assistant"
+  content     String
+  createdAt   DateTime
+}
+```
+
+### Sidebar globale — aggiunta
+
+La voce "Chat" viene aggiunta al nav globale (con badge N. conversazioni):
+```
+Dashboard
+Progetti
+Chat          (/chat)   ← nuova
+Impostazioni
+```
+
+### TODO futura
+
+- [ ] Migrare schema DB: aggiungere `ChatSession` e `ChatMessage`
+- [ ] Creare API `/api/chat/sessions` (GET lista, POST nuova)
+- [ ] Creare API `/api/chat/sessions/[id]/messages` (GET storico, POST messaggio SSE)
+- [ ] Creare pagina `/chat/page.tsx` con lista sessioni
+- [ ] Creare pagina `/chat/[chatId]/page.tsx` con chat UI (riusare `ChatPanel`)
+- [ ] Adattare `ChatPanel` per funzionare con `sessionId` invece di `projectId` diretto
+- [ ] Aggiungere "Chat" a `NAV_ITEMS` nella sidebar globale
+- [ ] Aggiungere `/chat` a `PROTECTED_PREFIXES` in `proxy.ts`
 
 ---
 
