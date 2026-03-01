@@ -37,25 +37,25 @@ Analizza i contenuti digitali esistenti, costruisce un knowledge graph della pre
 ### 1. Clona il repository
 
 ```bash
-git clone https://github.com/andrearugge/marklayer-v0.git
-cd marklayer-v0
+git clone https://github.com/andrearugge/visiblee.git
+cd visiblee
 ```
 
 ### 2. Configura le variabili d'ambiente
 
-Crea il file `.env` alla root del progetto:
+Crea il file `.env` alla root del progetto e compilalo con i tuoi valori (vedi la sezione [Variabili d'Ambiente](#variabili-dambiente)):
 
 ```bash
 cp .env.example .env
 ```
 
-Poi crea il file `apps/web/.env.local`:
+Poi crea il symlink che permette a Next.js di leggere lo stesso file:
 
 ```bash
-cp .env.example apps/web/.env.local
+ln -s ../../.env apps/web/.env.local
 ```
 
-Compila entrambi i file con i tuoi valori (vedi la sezione [Variabili d'Ambiente](#variabili-dambiente)).
+> Un solo file `.env` viene usato sia da Docker Compose che da Next.js.
 
 ### 3. Avvia i servizi Docker
 
@@ -128,7 +128,7 @@ Tutti i comandi si eseguono dalla **root** del monorepo:
 
 ## Variabili d'Ambiente
 
-Configurate sia in `.env` (root, usato da Docker Compose) che in `apps/web/.env.local` (usato da Next.js).
+Configurate in un unico `.env` alla root, condiviso da Docker Compose e Next.js (tramite symlink `apps/web/.env.local → ../../.env`).
 
 | Variabile | Descrizione | Default/Esempio |
 |-----------|-------------|-----------------|
@@ -157,7 +157,7 @@ Configurate sia in `.env` (root, usato da Docker Compose) che in `apps/web/.env.
 ## Struttura del Progetto
 
 ```
-marklayer-v0/
+visiblee/
 ├── apps/web/              # Next.js app (frontend + API routes)
 │   ├── src/app/           # App Router: pagine, layout, API
 │   ├── src/lib/           # Utility: auth, prisma, queue, scoring
