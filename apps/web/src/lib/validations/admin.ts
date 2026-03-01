@@ -34,3 +34,15 @@ export const AuditLogsQuerySchema = z.object({
 });
 
 export type AuditLogsQuery = z.infer<typeof AuditLogsQuerySchema>;
+
+export const CreateUserSchema = z.object({
+  name: z.string().min(2, "Nome di almeno 2 caratteri"),
+  email: z.string().email("Email non valida"),
+  password: z
+    .string()
+    .min(8, "Minimo 8 caratteri")
+    .regex(/[A-Z]/, "Richiesta almeno una lettera maiuscola")
+    .regex(/[0-9]/, "Richiesto almeno un numero"),
+  role: z.enum(["user", "admin"]).default("user"),
+});
+export type CreateUserFormValues = z.infer<typeof CreateUserSchema>;

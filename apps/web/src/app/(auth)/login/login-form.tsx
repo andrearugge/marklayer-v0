@@ -57,8 +57,13 @@ export function LoginForm({ callbackUrl = "/dashboard", error }: LoginFormProps)
     setIsLoading(false);
 
     if (result?.error) {
-      setFormError(ERROR_MESSAGES[result.error] ?? ERROR_MESSAGES.default);
-      return;
+      // "OAuthAccountNotLinked" can appear here as stale state from a previous
+      // failed Google sign-in on the same email — the credentials session was
+      // still created successfully. Only bail out for actual credential errors.
+      if (result.error !== "OAuthAccountNotLinked") {
+        setFormError(ERROR_MESSAGES[result.error] ?? ERROR_MESSAGES.default);
+        return;
+      }
     }
 
     router.push(callbackUrl);

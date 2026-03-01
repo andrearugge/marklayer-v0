@@ -16,6 +16,17 @@ interface LoginPageProps {
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const { callbackUrl, error } = await searchParams;
 
+  // Sanitize: never pass back a URL that would loop to the login/error page.
+  // NextAuth may set callbackUrl to the error page URL itself when redirecting
+  // after an OAuth failure (e.g. OAuthAccountNotLinked).
+  const safeCallbackUrl = (() => {
+    const url = callbackUrl ?? "/dashboard";
+    if (url.startsWith("/login") || url.startsWith("/register") || url.includes("error=")) {
+      return "/dashboard";
+    }
+    return url;
+  })();
+
   return (
     <Card>
       <CardHeader className="space-y-1">
@@ -25,7 +36,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <LoginForm callbackUrl={callbackUrl ?? "/dashboard"} error={error} />
+        <LoginForm callbackUrl={safeCallbackUrl} error={error} />
       </CardContent>
       <CardFooter className="flex justify-center">
         <p className="text-sm text-muted-foreground">

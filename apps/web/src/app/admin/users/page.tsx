@@ -6,6 +6,7 @@ import type { UserRole, UserStatus } from "@prisma/client";
 import { UserFilters } from "./filters";
 import { UsersTable } from "./users-table";
 import { UsersPagination } from "./pagination";
+import { CreateUserDialog } from "./create-user-dialog";
 
 interface UsersPageProps {
   searchParams: Promise<{
@@ -71,11 +72,14 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Users</h1>
-        <p className="text-muted-foreground">
-          {total} utent{total === 1 ? "e" : "i"} registrat{total === 1 ? "o" : "i"}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Users</h1>
+          <p className="text-muted-foreground">
+            {total} utent{total === 1 ? "e" : "i"} registrat{total === 1 ? "o" : "i"}
+          </p>
+        </div>
+        <CreateUserDialog />
       </div>
 
       <UserFilters

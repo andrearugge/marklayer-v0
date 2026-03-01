@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { UsersQuerySchema } from "@/lib/validations/admin";
+import { UsersQuerySchema, CreateUserSchema } from "@/lib/validations/admin";
+import { logAuditEvent, AUDIT_ACTIONS } from "@/lib/audit";
 
 export async function GET(req: NextRequest) {
   const currentUser = await getCurrentUser();
@@ -76,4 +78,56 @@ export async function GET(req: NextRequest) {
       totalPages: Math.ceil(total / limit),
     },
   });
+}
+
+export async function POST(req: Request) {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) {
+    return NextResponse.json(
+      { error: { message: "Unauthorized", code: "UNAUTHORIZED" } },
+      { status: 401 }
+    );
+  }
+  if (currentUser.role !== "admin") {
+    return NextResponse.json(
+      { error: { message: "Forbidden", code: "FORBIDDEN" } },
+      { status: 403 }
+    );
+  }
+
+  const body = await req.json();
+  const parsed = CreateUserSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: { message: parsed.error.issues[0].message } },
+      { status: 400 }
+    );
+  }
+
+  const { name, email, password, role } = parsed.data;
+
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    return NextResponse.json(
+      { error: { message: "Email già in uso", code: "EMAIL_EXISTS" } },
+      { status: 409 }
+    );
+  }
+
+  const hashed = await bcrypt.hash(password, 12);
+  const created = await prisma.user.create({
+    data: { name, email, password: hashed, role, status: "active" },
+    select: { id: true, name: true, email: true, role: true, status: true, createdAt: true },
+  });
+
+  await logAuditEvent({
+    action: AUDIT_ACTIONS.USER_CREATED,
+    actorId: currentUser.id,
+    actorEmail: currentUser.email ?? undefined,
+    targetId: created.id,
+    targetEmail: created.email,
+    metadata: { role },
+  });
+
+  return NextResponse.json({ data: created }, { status: 201 });
 }
