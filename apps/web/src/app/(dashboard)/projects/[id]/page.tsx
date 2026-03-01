@@ -29,6 +29,11 @@ import { ContentHealthCard } from "./content-health-card";
 import { GapAnalysisCard } from "./gap-analysis-card";
 import type { GapAnalysisData } from "./gap-analysis-card";
 import { GenerateSuggestionsButton } from "./generate-suggestions-button";
+import { SemanticSearchPanel } from "./semantic-search-panel";
+import { BriefsPanel } from "./briefs-panel";
+import type { BriefItem } from "./briefs-panel";
+import { GenerateBriefsButton } from "./generate-briefs-button";
+import { ChatPanel } from "./chat-panel";
 import type { SerializedDiscoveryJob } from "./discovery-job-status";
 import type { DiscoveredItem } from "./discovery-review";
 import type { SerializedAnalysisJob } from "./analysis-job-status";
@@ -39,7 +44,7 @@ import type { ContentHealth } from "./content-health-card";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Globe, FileText, ArrowLeft, History } from "lucide-react";
-import type { SourcePlatform, ContentType, ContentStatus, Prisma } from "@prisma/client";
+import type { SourcePlatform, ContentType, ContentStatus, Prisma, BriefStatus } from "@prisma/client";
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -99,6 +104,10 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
       ? "discovery"
       : rawSearch.tab === "analysis"
       ? "analysis"
+      : rawSearch.tab === "briefs"
+      ? "briefs"
+      : rawSearch.tab === "chat"
+      ? "chat"
       : "content";
   const isArchived = project.status === "ARCHIVED";
 
@@ -286,6 +295,71 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
     thinTopics: [], freshContent: 0, agingContent: 0, staleContent: 0,
     totalWithDate: 0, approvedCount: 0,
   };
+
+  // ─── Briefs tab data ───────────────────────────────────────────────────────
+
+  let briefs: BriefItem[] = [];
+  let briefsTotal = 0;
+  let briefsActiveStatus = "PENDING,ACCEPTED";
+  let hasActiveBriefsJob = false;
+  let latestBriefsJob: SerializedAnalysisJob | null = null;
+
+  if (activeTab === "briefs") {
+    const briefStatusParam = typeof rawSearch.briefStatus === "string"
+      ? rawSearch.briefStatus
+      : "PENDING,ACCEPTED";
+    briefsActiveStatus = briefStatusParam;
+
+    const VALID = new Set(["PENDING", "ACCEPTED", "REJECTED", "DONE"]);
+    const statuses = briefStatusParam
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => VALID.has(s)) as BriefStatus[];
+
+    const [rawBriefs, briefsCount, activeBriefsJobRaw, latestBriefsJobRaw] = await Promise.all([
+      prisma.contentBrief.findMany({
+        where: {
+          projectId: id,
+          ...(statuses.length > 0 ? { status: { in: statuses } } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      }),
+      prisma.contentBrief.count({
+        where: {
+          projectId: id,
+          ...(statuses.length > 0 ? { status: { in: statuses } } : {}),
+        },
+      }),
+      prisma.analysisJob.findFirst({
+        where: { projectId: id, jobType: "GENERATE_BRIEFS", status: { in: ["PENDING", "RUNNING"] } },
+        select: { id: true },
+      }),
+      prisma.analysisJob.findFirst({
+        where: { projectId: id, jobType: "GENERATE_BRIEFS" },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    briefs = rawBriefs.map((b) => ({
+      ...b,
+      keyPoints: b.keyPoints as string[],
+      entities: b.entities as string[],
+      generatedAt: b.generatedAt.toISOString(),
+      createdAt: b.createdAt.toISOString(),
+    }));
+    briefsTotal = briefsCount;
+    hasActiveBriefsJob = activeBriefsJobRaw !== null;
+    latestBriefsJob = latestBriefsJobRaw
+      ? {
+          ...latestBriefsJobRaw,
+          resultSummary: latestBriefsJobRaw.resultSummary as Record<string, unknown> | null,
+          startedAt: latestBriefsJobRaw.startedAt?.toISOString() ?? null,
+          completedAt: latestBriefsJobRaw.completedAt?.toISOString() ?? null,
+          createdAt: latestBriefsJobRaw.createdAt.toISOString(),
+        }
+      : null;
+  }
 
   if (activeTab === "analysis") {
     entityPage = Math.max(1, Number(rawSearch.entityPage) || 1);
@@ -559,6 +633,26 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
           >
             Analisi
           </Link>
+          <Link
+            href={`/projects/${id}?tab=briefs`}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              activeTab === "briefs"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Brief
+          </Link>
+          <Link
+            href={`/projects/${id}?tab=chat`}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              activeTab === "chat"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Chat AI
+          </Link>
         </nav>
       </div>
 
@@ -782,6 +876,9 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
           {/* Gap analysis */}
           <GapAnalysisCard data={gapData} />
 
+          {/* Semantic search */}
+          <SemanticSearchPanel projectId={id} />
+
           {/* Batch suggestions trigger */}
           {totalCount > 0 && (
             <div className="flex justify-end">
@@ -799,6 +896,64 @@ export default async function ProjectDetailPage({ params, searchParams }: PagePr
           />
 
           <TopicsPanel topics={topics} />
+        </div>
+      )}
+
+      {/* ══ BRIEFS TAB ═══════════════════════════════════════════════════════════ */}
+      {activeTab === "briefs" && (
+        <div className="space-y-6">
+          {/* Job status polling */}
+          {latestBriefsJob && (
+            <AnalysisJobStatus projectId={id} initialJob={latestBriefsJob} />
+          )}
+
+          {/* Header */}
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold">Content Brief</h2>
+              <p className="text-xs text-muted-foreground">
+                Guide di scrittura generate automaticamente dai gap del tuo contenuto.
+              </p>
+            </div>
+            <GenerateBriefsButton projectId={id} hasActiveBriefsJob={hasActiveBriefsJob} />
+          </div>
+
+          {/* Status filters */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {(["PENDING,ACCEPTED", "PENDING", "ACCEPTED", "DONE", "REJECTED"] as const).map((s) => (
+              <a
+                key={s}
+                href={`/projects/${id}?tab=briefs&briefStatus=${s}`}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  briefsActiveStatus === s
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {s === "PENDING,ACCEPTED" ? "Attivi" : s === "PENDING" ? "Da fare" : s === "ACCEPTED" ? "Accettati" : s === "DONE" ? "Fatti" : "Scartati"}
+              </a>
+            ))}
+          </div>
+
+          <BriefsPanel
+            projectId={id}
+            initialBriefs={briefs}
+            initialTotal={briefsTotal}
+            activeStatus={briefsActiveStatus}
+          />
+        </div>
+      )}
+
+      {/* ══ CHAT TAB ══════════════════════════════════════════════════════════════ */}
+      {activeTab === "chat" && (
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold">Chat AI</h2>
+            <p className="text-xs text-muted-foreground">
+              Fai domande strategiche sul tuo content portfolio. L&apos;assistente conosce score, entità, gap e contenuti rilevanti.
+            </p>
+          </div>
+          <ChatPanel projectId={id} />
         </div>
       )}
 

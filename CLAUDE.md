@@ -2,10 +2,9 @@
 
 ## Stato Corrente
 
-**Fase**: 5 — Content Generation Agent
-**Step corrente**: 5.1 completato
-**Ultimo commit**: feat(step-5.1): per-content AI suggestions — engine endpoint, BullMQ batch, inline API, UI card
-**Aggiornato**: 2026-02-28
+**Step corrente**: 5.4 completato — prossimo: Step 6 (refactor navigazione)
+**Ultimo commit**: feat(step-5.4): conversational chat agent — engine SSE, Next.js proxy, ChatPanel
+**Aggiornato**: 2026-03-01
 
 ---
 
@@ -13,770 +12,183 @@
 
 | Layer | Tecnologia | Note |
 |-------|-----------|------|
-| Frontend | Next.js 16 (App Router, `src/`) | `proxy.ts` al posto di `middleware.ts` |
-| UI | shadcn/ui + Tailwind CSS v4 | Radix UI primitives |
+| Frontend | Next.js 16 App Router (`src/`) | `proxy.ts` invece di `middleware.ts` |
+| UI | shadcn/ui + Tailwind CSS v4 | |
 | ORM | Prisma 7 | `prisma.config.ts`, adapter `PrismaPg` |
-| Database | PostgreSQL 16 + pgvector | Docker |
+| Database | PostgreSQL 16 + pgvector | Docker; indice HNSW su `content_items.embedding` |
 | Auth | NextAuth.js v5 (beta.30) | Google OAuth + Credentials |
-| Job Queue | BullMQ + Redis | Task asincroni (Fase 2b+) |
-| AI Service | Python FastAPI (`services/engine/`) | porta 8000 |
-| LLM | Claude API (Anthropic) | Fase 3+ |
-| Container | Docker Compose | postgres + redis + engine |
+| Queue | BullMQ + Redis | worker: `npm run worker` da root |
+| AI Engine | Python FastAPI (`services/engine/`) | porta 8000, Docker |
+| LLM | Claude Haiku `claude-haiku-4-5-20251001` | entity extraction, scoring, chat |
+| Embeddings | fastembed ONNX, MiniLM-L12-v2 384 dim | volume `fastembed_models:/app/models` |
+
+---
 
 ## Struttura del Progetto
 
 ```
 apps/web/src/
   app/
-    (auth)/            # login, register
-    (dashboard)/       # layout sidebar, projects/, content/, graph/, settings/
-    admin/             # users/, audit-log/
-    api/               # auth/, admin/, me/, projects/[id]/content/, discovery/
-  components/          # ui/ auth/ dashboard/ admin/ shared/
-  lib/                 # auth.ts, prisma.ts, audit.ts, projects.ts, content-labels.ts, validations/
-  prisma/              # schema.prisma, seed.ts, prisma.config.ts
-  proxy.ts             # Next.js 16 middleware (NextAuth v5 wrapper)
-services/engine/       # Python FastAPI
-  agents/              # crawler.py, search.py
-  api/                 # crawl.py, search.py, deps.py
-  config.py            # pydantic-settings
+    (auth)/          # login, register
+    (dashboard)/     # layout sidebar: dashboard, projects, content, graph, settings
+    admin/           # users, audit-log
+    api/             # tutti gli endpoint Next.js
+  lib/               # auth, prisma, audit, projects, queue, scoring, suggestions, content-labels
+  workers/           # discovery.ts — processo BullMQ standalone
+  prisma/            # schema.prisma, migrations, seed, prisma.config.ts
+  proxy.ts           # NextAuth v5 middleware wrapper
+
+services/engine/     # Python FastAPI porta 8000
+  agents/            # crawler, search, extractor, embedder, clusterer
+  api/               # crawl, search, extract, embed, analyze, chat, health, deps
+  config.py          # pydantic-settings
 ```
+
+---
 
 ## Convenzioni
 
-### Git
-- Commit: `type(scope): description` — types: `feat|fix|refactor|docs|chore|test`
-- Un commit = una unità logica di lavoro
-
-### Codice (TypeScript)
-- Strict mode; Zod per validazione; Server Components di default
-- Naming: `kebab-case` file, `PascalCase` componenti, `camelCase` funzioni, `UPPER_SNAKE_CASE` costanti
-
-### Database
-- Tabelle/colonne `snake_case`; UUID come PK; `created_at`/`updated_at` ovunque
-
-### API
-- Risposte: `{ data: T }` successo, `{ error: { message, code } }` errore
-- Status: 200/201/400/401/403/404/500; paginazione offset-based `{ data, pagination }`
+- **Git**: `type(scope): description` — `feat|fix|refactor|docs|chore|test`
+- **TypeScript**: strict mode, Zod validazione, Server Components di default, `kebab-case` file, `PascalCase` componenti
+- **DB**: `snake_case` tabelle/colonne, UUID PK, `created_at`/`updated_at` ovunque
+- **API**: `{ data: T }` successo · `{ error: { message, code } }` errore · paginazione offset-based
 
 ---
 
-## Cronologia Fasi
+## Schema DB (modelli chiave)
 
-### ✅ Fase 1 — Foundation (Step 1.0–1.9)
-Scaffolding, Docker/DB, NextAuth v5, Auth UI, Proxy Middleware, Dashboard Layout, Admin Panel, Settings, Audit Log, Polish. **27 route, build OK.**
+- **Project** — `id, name, domain, description, status (ACTIVE|ARCHIVED)`
+- **ContentItem** — `id, projectId, title, url, rawContent, excerpt, wordCount, contentHash, sourcePlatform, contentType, status (DISCOVERED|APPROVED|REJECTED|ARCHIVED), embedding vector(384), publishedAt, lastCrawledAt`
+- **DiscoveryJob** — `id, projectId, jobType (CRAWL_SITE|SEARCH_PLATFORM|FULL_DISCOVERY), status, resultSummary, config`
+- **Entity** — `id, projectId, type (BRAND|PERSON|ORGANIZATION|TOPIC|PRODUCT|LOCATION|CONCEPT|OTHER), label, normalizedLabel, frequency`; `@@unique([projectId, normalizedLabel, type])`
+- **ContentEntity** — `contentId, entityId, salience, context` (pivot)
+- **EntityRelation** — `sourceId, targetId, relationType, weight`
+- **ProjectScore** — `id, projectId (unique), overallScore, dimensions (JsonB), suggestions (JsonB), isStale, computedAt`
+- **AnalysisJob** — `id, projectId, jobType (FULL_ANALYSIS|EXTRACT_ENTITIES|GENERATE_EMBEDDINGS|CLUSTER_TOPICS|COMPUTE_SCORE|GENERATE_CONTENT_SUGGESTIONS|GENERATE_BRIEFS), status, resultSummary`
+- **ContentSuggestion** — `id, contentId (unique), projectId, suggestions (JsonB string[]), generatedAt`
+- **ContentBrief** — `id, projectId, title, platform, gapType, gapLabel, keyPoints (JsonB), entities (JsonB), targetWordCount, notes, status (PENDING|ACCEPTED|REJECTED|DONE)`; `@@unique([projectId, gapType, gapLabel])`
 
-### ✅ Fase 2a — CRUD Manuale (Step 2.0–2.8)
-Models/Migration, Projects CRUD API+UI, Content Add/List/Detail/Edit, CSV Import, Bulk Actions, Polish.
-- Schema: `Project`, `ContentItem`, `DiscoveryJob` in `schema.prisma`
-- Ownership: `assertProjectOwnership()` in `lib/projects.ts`
-- Dedup: SHA-256 hash (`url || rawContent`) in campo `contentHash`
-- Audit: `logAuditEvent()` in `lib/audit.ts`, `AUDIT_ACTIONS` constants
-
-### Fase 2b — Discovery Agent
-
-#### ✅ Step 2b.0 — Python FastAPI Scaffolding
-`services/engine/`: FastAPI app, Dockerfile, health check `GET /health`, CORS, pydantic-settings.
-
-#### ✅ Step 2b.1 — Web Crawler Agent
-`agents/crawler.py`: BFS async, httpx, rate limiting, max depth/pages, BeautifulSoup estrazione contenuto.
-`api/crawl.py`: `POST /api/crawl/site`.
-Next.js: `POST /api/projects/:id/discovery/crawl` → salva ContentItem con `AGENT_CRAWL`/`DISCOVERED`.
-
-#### ✅ Step 2b.2 — Platform Search Agent
-`agents/search.py`: SearchAgent con **Brave Search API** (header `X-Subscription-Token`, env `BRAVE_SEARCH_API_KEY`).
-Query: `site:platform.com "{brand}"` per tutte le piattaforme; max 20 risultati/request.
-`api/search.py`: `POST /api/search/platform` + `GET /api/search/platform/preview`.
-Next.js: `POST /api/projects/:id/discovery/search` → mappa platform → `SourcePlatform` + `ContentType`.
-> Google CSE scartato: 403 persistente nonostante configurazione corretta (org policy `beconcept.studio`).
-
-#### ✅ Step 2b.3 — Content Fetching & Extraction
-`agents/crawler.py`: `ExtractResult` + `extract_urls()` — batch async con `asyncio.Semaphore`, riusa `_extract_page_data`.
-`api/crawl.py`: `POST /api/crawl/extract` — fino a 50 URL/request, errori isolati per URL.
-Next.js: `POST /api/projects/:id/content/fetch` — trova items con URL ma senza `rawContent`, chiama engine in batch da 20, aggiorna `rawContent`/`wordCount`/`excerpt`/`lastCrawledAt`/`publishedAt`.
-
-#### ✅ Step 2b.4 — Discovery Job Orchestration
-`lib/queue.ts`: BullMQ `Queue<DiscoveryJobPayload>`, tipi `CRAWL_SITE | SEARCH_PLATFORM | FULL_DISCOVERY`, Redis connection da `REDIS_URL`.
-`workers/discovery.ts`: processo standalone (`npm run worker`), crea Prisma client dedicato, gestisce i 3 job type, aggiorna `DiscoveryJob` PENDING → RUNNING → COMPLETED/FAILED + `resultSummary`.
-API Next.js:
-- `POST /api/projects/:id/discovery/start` — valida, crea `DiscoveryJob` (PENDING), enqueue BullMQ, 202
-- `GET /api/projects/:id/discovery/status` — ultimo job del progetto
-- `GET /api/projects/:id/discovery/history` — lista paginata job
-Scripts: `npm run worker` (root + apps/web). **Build OK (33 route).**
-
-#### ✅ Step 2b.5 — Discovery Review UI
-Tab "Discovery" nella pagina progetto (`?tab=discovery`):
-- `start-discovery-dialog.tsx`: form per avviare job (CRAWL_SITE / SEARCH_PLATFORM / FULL_DISCOVERY), selezione piattaforme con checkbox, config crawl opzionale.
-- `discovery-job-status.tsx`: card con status corrente, polling ogni 3s se PENDING/RUNNING (usa `GET /status`), mostra `resultSummary` dettagliato; `router.refresh()` al completamento.
-- `discovery-review.tsx`: lista DISCOVERED (max 20), approve/reject per item, bulk approve/reject con AlertDialog di conferma; "vedi tutti" link al content tab filtrato.
-- Storico job (ultimi 5): tabella tipo/status/date/risultati renderizzata server-side.
-- Tab nav URL-driven (`?tab=` param), dati fetchati condizionalmente per tab attivo.
-- Header azioni cambiano in base al tab (Discovery: "Avvia Discovery"; Content: "Aggiungi", "CSV").
-**Build OK (33 route).**
-
-#### ✅ Step 2b.6 — Phase 2b Polish
-**Audit log**: `DISCOVERY_JOB_STARTED`, `DISCOVERY_JOB_COMPLETED`, `DISCOVERY_JOB_FAILED` in `lib/audit.ts`; loggati inline nel worker (usa la sua istanza Prisma dedicata) con metadata jobType + resultSummary/error.
-**Worker hardening**: `safeUpdateJob()` wrappa `prisma.discoveryJob.update` — ignora P2025 (record not found); `logAudit()` inline never throws; errori categorizzati (engine down vs errore dati).
-**Python retry logic**:
-- `agents/search.py`: `_call_brave` con `max_retries=3`, exponential backoff 2^attempt secondi su HTTP 429.
-- `agents/crawler.py`: `_fetch_page_with_retry()` wrapper, retry su connection errors e HTTP 5xx (max 2 retry, sleep 1.5s e 3s).
-**UI polish**: `StartDiscoveryDialog` accetta `hasActiveJob` prop — bottone disabilitato con spinner "Discovery in corso…" mentre un job è PENDING/RUNNING; `FetchContentButton` (`fetch-content-button.tsx`) — batch-fetcha rawContent per items con URL ma senza rawContent, mostra conteggio e risultato inline; wired nella tab Discovery del progetto.
-**Build OK (33 route).**
+> **Embedding**: campo `Unsupported("vector(384)")` — tutte le operazioni via `$queryRawUnsafe`/`$executeRawUnsafe`
 
 ---
 
-## 🎉 Fase 2 — Content Discovery COMPLETATA
+## API Engine (Python FastAPI)
 
----
+```
+GET  /health
+POST /api/crawl/site            — BFS crawler
+POST /api/crawl/extract         — estrai rawContent da lista URL
+POST /api/search/platform       — Brave Search API per piattaforma
+POST /api/extract/entities      — entity extraction via Claude Haiku
+POST /api/embed/batch           — embedding batch (fastembed)
+POST /api/embed/query           — embedding singola query (per semantic search)
+POST /api/analyze/topics        — KMeans clustering + label LLM
+POST /api/analyze/suggestions   — suggestions progetto via Claude Haiku
+POST /api/analyze/content-suggestion — suggestions per singolo content item
+POST /api/analyze/content-brief — genera brief strutturato da gap
+POST /api/chat/message          — streaming SSE chat (Anthropic SDK)
+```
 
-# Piano Dettagliato — Fase 3: Knowledge Graph & Analysis
+## API Next.js (route principali per progetto)
 
-## Decisioni Architetturali Fase 3
+```
+# Discovery
+POST /api/projects/:id/discovery/start|crawl|search
+GET  /api/projects/:id/discovery/status|history
+POST /api/projects/:id/content/fetch        — batch fetch rawContent
 
-### ADR-009: Embedding Model — fastembed (ONNX locale)
-- Libreria: `fastembed` (ONNX runtime, ~200 MB vs ~1 GB PyTorch)
-- Modello: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (384 dim, multilingua it/en)
-- Lazy loading, singleton nel processo FastAPI
-- Nessun costo per request; supporto italiano nativo
-- Upgrade opzionale a OpenAI `text-embedding-3-small` via env `EMBEDDING_PROVIDER=openai` (richiede `OPENAI_API_KEY`)
-- Colonna pgvector: `vector(384)` su `content_items`; indice HNSW per ANN search
+# Analysis
+POST /api/projects/:id/analysis/start       — avvia FULL_ANALYSIS
+GET  /api/projects/:id/analysis/status
+GET  /api/projects/:id/analysis/score
+GET  /api/projects/:id/analysis/entities
+GET  /api/projects/:id/analysis/topics
+POST /api/projects/:id/analysis/suggestions — batch GENERATE_CONTENT_SUGGESTIONS
 
-### ADR-010: Entity Extraction via Claude Haiku
-- Modello: `claude-haiku-4-5-20251001` — rapido e economico per task strutturati
-- Output: JSON list `[{label, type, salience, context}]` via structured tool use
-- Batch: fino a 10 content items per chiamata (bilanciamento token/latenza)
-- EntityType: BRAND, PERSON, ORGANIZATION, TOPIC, PRODUCT, LOCATION, CONCEPT, OTHER
-- Normalizzazione: lowercase + strip + dedup per `(projectId, normalizedLabel, type)`
-- `frequency` sull'Entity: incrementato ad ogni menzione trovata in un nuovo content item
+# Content suggestions
+GET  /api/projects/:id/content/:cid/suggestions
+POST /api/projects/:id/content/:cid/suggestions  — inline generation
 
-### ADR-011: AI Readiness Score — calcolo in Next.js + suggestions via Haiku
-- Dimensioni e pesi (score 0-100 su ciascuna):
-  - **Copertura** (25%): piattaforme uniche (max 6 → 100), rapporto sorgenti esterne vs proprie
-  - **Profondità** (25%): word count medio (target 800+ = 100), % contenuti con rawContent estratto
-  - **Freschezza** (20%): % contenuti < 6 mesi (peso 1.0), < 12 mesi (peso 0.5), oltre (peso 0)
-  - **Autorevolezza** (15%): media pesi piattaforma (NEWS=100, SUBSTACK/LINKEDIN=80, MEDIUM=70, WEBSITE=60, TWITTER=40, altri=30)
-  - **Coerenza** (15%): % delle top-3 entità per frequenza che compaiono in ≥40% dei contenuti APPROVED
-- Overall: media pesata delle 5 dimensioni
-- Suggestions: 3-5 azioni concrete generate da Claude Haiku sulle dimensioni più basse (threshold < 60)
-- Calcolo pure SQL/Prisma in Next.js — nessun roundtrip engine; solo le suggestions usano l'LLM
+# Briefs
+POST /api/projects/:id/briefs/generate
+GET  /api/projects/:id/briefs
+PATCH/DELETE /api/projects/:id/briefs/:briefId
 
----
+# Semantic search
+POST /api/projects/:id/search/semantic      — embed query + pgvector cosine
 
-## Schema Database — Fase 3
-
-```prisma
-// Aggiunta a ContentItem esistente
-model ContentItem {
-  // ... campi esistenti ...
-  embedding       Unsupported("vector(384)")?  // testo embedding
-  contentEntities ContentEntity[]
-}
-
-// Aggiunta a Project esistente
-model Project {
-  // ... relazioni esistenti ...
-  entities     Entity[]
-  score        ProjectScore?
-  analysisJobs AnalysisJob[]
-}
-
-enum EntityType {
-  BRAND
-  PERSON
-  ORGANIZATION
-  TOPIC
-  PRODUCT
-  LOCATION
-  CONCEPT
-  OTHER
-}
-
-model Entity {
-  id              String     @id @default(uuid())
-  projectId       String     @map("project_id")
-  type            EntityType
-  label           String     @db.VarChar(255)
-  normalizedLabel String     @map("normalized_label") @db.VarChar(255)
-  frequency       Int        @default(1)   // # content items dove appare
-  metadata        Json?      @db.JsonB
-  createdAt       DateTime   @default(now()) @map("created_at")
-  updatedAt       DateTime   @updatedAt @map("updated_at")
-
-  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  contentEntities ContentEntity[]
-  sourceRelations EntityRelation[] @relation("SourceEntity")
-  targetRelations EntityRelation[] @relation("TargetEntity")
-
-  @@unique([projectId, normalizedLabel, type])
-  @@index([projectId, type])
-  @@map("entities")
-}
-
-model ContentEntity {
-  contentId String  @map("content_id")
-  entityId  String  @map("entity_id")
-  salience  Float   @default(0.5)  // 0-1: rilevanza dell'entità nel contenuto
-  context   String? @db.Text        // snippet testuale intorno all'entità
-
-  content ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
-  entity  Entity      @relation(fields: [entityId], references: [id], onDelete: Cascade)
-
-  @@id([contentId, entityId])
-  @@map("content_entities")
-}
-
-model EntityRelation {
-  id           String   @id @default(uuid())
-  projectId    String   @map("project_id")
-  sourceId     String   @map("source_id")
-  targetId     String   @map("target_id")
-  relationType String   @map("relation_type") @db.VarChar(100)
-  weight       Float    @default(1.0)
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  source Entity @relation("SourceEntity", fields: [sourceId], references: [id], onDelete: Cascade)
-  target Entity @relation("TargetEntity", fields: [targetId], references: [id], onDelete: Cascade)
-
-  @@unique([sourceId, targetId, relationType])
-  @@index([projectId])
-  @@map("entity_relations")
-}
-
-model ProjectScore {
-  id           String   @id @default(uuid())
-  projectId    String   @unique @map("project_id")
-  overallScore Float    @map("overall_score")         // 0-100
-  dimensions   Json     @db.JsonB                      // {copertura, profondita, freschezza, autorita, coerenza}
-  suggestions  Json?    @db.JsonB                      // string[]
-  contentCount Int      @map("content_count")          // # contenuti usati per il calcolo
-  isStale      Boolean  @default(false) @map("is_stale") // true dopo nuovi contenuti
-  computedAt   DateTime @map("computed_at")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@map("project_scores")
-}
-
-enum AnalysisJobType {
-  FULL_ANALYSIS        // extract + embed + cluster + score (sequenziale)
-  EXTRACT_ENTITIES
-  GENERATE_EMBEDDINGS
-  CLUSTER_TOPICS
-  COMPUTE_SCORE
-}
-
-model AnalysisJob {
-  id            String          @id @default(uuid())
-  projectId     String          @map("project_id")
-  jobType       AnalysisJobType
-  status        JobStatus       @default(PENDING)  // riusa enum esistente
-  resultSummary Json?           @map("result_summary") @db.JsonB
-  startedAt     DateTime?       @map("started_at")
-  completedAt   DateTime?       @map("completed_at")
-  errorMessage  String?         @map("error_message") @db.Text
-  createdAt     DateTime        @default(now()) @map("created_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@index([projectId, status])
-  @@map("analysis_jobs")
-}
+# Chat
+POST /api/projects/:id/chat                 — SSE proxy, RAG context
 ```
 
 ---
 
-## API Design — Fase 3
+## BullMQ Worker (`workers/discovery.ts`)
 
-### Python Engine (nuovi endpoint)
-```
-POST /api/extract/entities   → [{contentId, entities: [{label,type,salience,context}]}]
-POST /api/embed/batch        → [{id, embedding: float[384]}]
-POST /api/analyze/topics     → [{contentId, topicIdx, topicLabel, confidence}]
-POST /api/analyze/suggestions → string[]   (input: {dimensions, projectName})
-```
+Job types gestiti in un unico processo:
+- `FULL_DISCOVERY`, `CRAWL_SITE`, `SEARCH_PLATFORM`
+- `FULL_ANALYSIS` → pipeline: EXTRACT → EMBED → CLUSTER → SCORE
+- `EXTRACT_ENTITIES`, `GENERATE_EMBEDDINGS`, `CLUSTER_TOPICS`, `COMPUTE_SCORE`
+- `GENERATE_CONTENT_SUGGESTIONS`, `GENERATE_BRIEFS`
 
-### Next.js API (nuove route)
-```
-POST /api/projects/:id/analysis/start    → avvia FULL_ANALYSIS (202)
-GET  /api/projects/:id/analysis/status   → ultimo AnalysisJob
-GET  /api/projects/:id/analysis/score    → ProjectScore con dimensioni
-POST /api/projects/:id/analysis/score    → ricalcola e salva score
-GET  /api/projects/:id/analysis/entities → lista Entity (filtro type, paginata)
-GET  /api/projects/:id/analysis/topics   → Entity di tipo TOPIC con content count
-```
-
-### BullMQ — nuovi job type (in `workers/discovery.ts` o nuovo `workers/analysis.ts`)
-```
-FULL_ANALYSIS       → chiama in sequenza: EXTRACT → EMBED → CLUSTER → SCORE
-EXTRACT_ENTITIES    → batch extraction con Claude Haiku
-GENERATE_EMBEDDINGS → batch embedding con fastembed
-CLUSTER_TOPICS      → clustering KMeans + label LLM
-COMPUTE_SCORE       → calcolo score + suggestions LLM
-```
+Pattern: `safeUpdateJob()` ignora P2025; `logAudit()` mai throws; engine errors categorizzati.
 
 ---
 
-## Piano Step Atomici — Fase 3
+## UI — Pagina Progetto (`/projects/[id]`)
 
-### Step 3.0 — Schema & Infrastructure ✅
-- [x] Abilitare pgvector: `CREATE EXTENSION IF NOT EXISTS vector` (migration SQL raw)
-- [x] Aggiungere `embedding Unsupported("vector(384)")?` a `ContentItem`
-- [x] Nuovi enum: `EntityType`, `AnalysisJobType`
-- [x] Nuovi modelli: `Entity`, `ContentEntity`, `EntityRelation`, `ProjectScore`, `AnalysisJob`
-- [x] Aggiungere relazioni a `Project` e `ContentItem`
-- [x] Migration: `add-knowledge-graph`
-- [x] Indice HNSW pgvector: `CREATE INDEX ON content_items USING hnsw (embedding vector_cosine_ops)` (in migration SQL)
-- [x] Prisma generate + verifica build
-- **Note**: `Unsupported("vector(384)")` escluso dal Prisma CRUD automatico — operazioni embedding via `$executeRaw`/`$queryRaw`
-- **Note**: pgvector deve essere abilitato prima di `migrate deploy` — usare `migration.sql` con SQL raw
-- **Done when**: migration applicata, `prisma generate` OK, build OK ✅
+Tab navigation URL-driven (`?tab=`):
+- **content** (default) — lista paginata + filtri, breakdown per piattaforma/tipo/status
+- **discovery** — avvia job, review DISCOVERED items, storico job
+- **analysis** — ScoreCard (5 dimensioni), ContentHealthCard, GapAnalysisCard, SemanticSearchPanel, EntitiesPanel, TopicsPanel, GenerateSuggestionsButton
+- **briefs** — BriefsPanel con cards per gap, filtri status, GenerateBriefsButton
+- **chat** — ChatPanel streaming con RAG contestuale, suggested prompts
 
-### Step 3.1 — Entity Extraction Pipeline ✅
-- [x] `agents/extractor.py`: `EntityExtractorAgent`
-  - Client Anthropic asincrono, `claude-haiku-4-5-20251001`
-  - Tool use / JSON structured output: schema `{entities: [{label, type, salience, context}]}`
-  - Batch: 1 chiamata LLM per content item (semplicità > throughput per MVP)
-  - Retry su `APIStatusError` 429/529 con exponential backoff
-  - Normalizzazione: `label.strip().lower()`, type uppercase
-- [x] `api/extract.py`: `POST /api/extract/entities` — body `[{id, text, title}]`, response `[{id, entities}]`
-- [x] `requirements.txt`: nessuna dipendenza aggiuntiva (anthropic già presente)
-- [x] BullMQ: aggiungere `EXTRACT_ENTITIES` al worker (secondo Worker su queue "analysis")
-  - Fetch content items con `rawContent IS NOT NULL AND status = APPROVED` (max 50)
-  - Per ogni item: chiama engine, upsert `Entity` (increment frequency se esiste), create `ContentEntity`
-  - `resultSummary`: `{processed, entitiesFound, errors}`
-- [x] Next.js: `POST /api/projects/:id/analysis/extract` → crea `AnalysisJob` + enqueue
-- [x] `GET /api/projects/:id/analysis/status` → ultimo AnalysisJob del progetto
-- [x] Audit: `ANALYSIS_JOB_STARTED`, `ANALYSIS_JOB_COMPLETED`, `ANALYSIS_JOB_FAILED` in `lib/audit.ts`
-- **Done when**: content items APPROVED hanno Entity estratte, ContentEntity presenti nel DB ✅
-
-### Step 3.2 — Embedding Generation ✅
-- [x] `agents/embedder.py`: `EmbedderAgent`
-  - `fastembed.TextEmbedding("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")`
-  - Singleton con lazy loading (`_model: TextEmbedding | None = None`)
-  - Input: `[{id, text}]`; testo = `title + ". " + rawContent[:2000]`
-  - Output: `[{id, embedding: list[float]}]`
-  - Batch interno: `model.embed(texts, batch_size=32)`
-- [x] `api/embed.py`: `POST /api/embed/batch` — body `[{id, text}]`, response `[{id, embedding}]`
-- [x] `requirements.txt`: aggiungi `fastembed==0.4.2`
-- [x] BullMQ: aggiungere `GENERATE_EMBEDDINGS` al worker
-  - Fetch content items con `rawContent IS NOT NULL` ma `embedding IS NULL` (`$queryRawUnsafe`)
-  - Batch da 100 alla volta verso engine
-  - Update via `prisma.$executeRawUnsafe`: `UPDATE content_items SET embedding = $1::vector WHERE id = $2`
-  - `resultSummary`: `{processed, errors}`
-- [x] Next.js: `POST /api/projects/:id/analysis/embed` → crea `AnalysisJob` + enqueue
-- [x] Rebuild Docker image (fastembed aggiunto), volume `fastembed_models` per persistenza modello ONNX
-- **Note**: `fastembed` scarica il modello ONNX al primo avvio (~90 MB); volume Docker `fastembed_models:/app/models`
-- **Note**: Prisma esclude i campi `Unsupported` dai tipi generati → tutte le operazioni embedding via `$queryRawUnsafe`/`$executeRawUnsafe`
-- **Done when**: content items con rawContent hanno vettore embedding; similarity query via `$queryRaw` funziona ✅
-
-### Step 3.3 — Topic Clustering ✅
-- [x] `agents/clusterer.py`: `TopicClusterer`
-  - Input: `[{id, embedding: list[float]}]` + `titles: dict[id, title]`
-  - `k = max(3, min(12, round(sqrt(n / 2))))` dove n = numero content items
-  - KMeans da `scikit-learn` (n_init=10, random_state=42), via thread executor
-  - Silhouette score per validare k: se < 0.15 prova k=2, poi collassa a k=1
-  - Label cluster: Claude Haiku — 5 titoli sample per cluster → label 2-4 parole in italiano, in parallelo
-  - Output: `[{id, clusterIdx, topicLabel, confidence}]`; confidence = 1 - dist_normalizzata_al_centroide
-- [x] `api/analyze.py`: `POST /api/analyze/topics` — soft error nel body se < 6 items
-- [x] `requirements.txt`: aggiunti `scikit-learn==1.6.1` + `numpy==1.26.4`
-- [x] BullMQ: aggiunto `CLUSTER_TOPICS` al worker (`discovery.ts`)
-  - Fetch embeddings via `$queryRawUnsafe`: `embedding::text AS embedding`
-  - Parse JSON pgvector `"[x,y,z]"` → `number[]`
-  - Delete Entity TOPIC esistenti (cascade su ContentEntity)
-  - Crea Entity (type=TOPIC) per ogni label unica + ContentEntity per ogni assegnazione
-  - `resultSummary`: `{clustersFound, itemsClustered, errors}`
-- [x] Next.js: `POST /api/projects/:id/analysis/cluster` → check ≥ 6 embeddings, enqueue
-- [x] Rebuild Docker image (scikit-learn + numpy aggiunti)
-- **Note**: min 6 content items con embedding per clustering sensato; soft error se meno
-- **Note**: Entity TOPIC precedenti eliminati ad ogni reclusterizzazione (idempotente)
-- **Done when**: Entity TOPIC presenti, ContentEntity con topic assegnati ✅
-
-### Step 3.4 — AI Readiness Scoring ✅
-- [x] `lib/scoring.ts`: `computeScoreDimensions(projectId, db)` — accetta prisma come param (usabile sia da Next.js che dal worker)
-  - 7 query parallele (Promise.all): platform groups, totale, avg word count, published dates, top entity, total approved, raw content count
-  - 5 dimensioni con formule da ADR-011: copertura, profondita, freschezza, autorita, coerenza
-  - overall = media ponderata (25%+25%+20%+15%+15%)
-- [x] `lib/suggestions.ts`: `generateSuggestions(projectName, dimensions)` — fetch engine + fallback statico
-- [x] `api/analyze.py` engine: `POST /api/analyze/suggestions` — Claude Haiku numbered list → `string[]`
-- [x] BullMQ: aggiunto `COMPUTE_SCORE` al worker; `runComputeScore()` upsert `ProjectScore` con `isStale: false`
-- [x] `ComputeScorePayload` in `lib/queue.ts`
-- [x] Next.js:
-  - `GET /api/projects/:id/analysis/score` → ritorna `ProjectScore` o `null`
-  - `POST /api/projects/:id/analysis/score` → check ≥ 1 item, enqueue, ritorna 202
-- [x] Stale flag: `PATCH /content/bulk` e `POST /content` impostano `isStale: true` via `updateMany` (no-op se non esiste)
-- **Note**: `ScoreDimensions` castato a `unknown as Prisma.InputJsonValue` per Prisma JsonB
-- **Note**: `computeScoreDimensions` riceve `db: PrismaClient | any` — funziona con entrambi i client Prisma (Next.js singleton e worker dedicato)
-- **Done when**: ProjectScore calcolato e recuperabile, suggestions generate ✅
-
-### Step 3.5 — Analysis Dashboard UI ✅
-- [x] Tab "Analisi" nella pagina progetto (terzo tab, URL param `?tab=analysis`)
-- [x] `analysis-job-status.tsx`: polling ogni 4s su `GET /analysis/status` mentre PENDING/RUNNING
-- [x] `score-card.tsx`:
-  - Score globale: numero grande + colore (< 40 rosso, 40-70 giallo, > 70 verde)
-  - 5 barre dimensione: label + valore + `<Progress>` shadcn
-  - Badge "Score non aggiornato" se `isStale = true`
-  - Bottone "Avvia Analisi" → POST `/analysis/start`
-  - Data ultimo calcolo
-  - Lista suggestions (icona ⚠ + testo)
-- [x] `entities-panel.tsx`:
-  - Tabs per tipo: TUTTI / BRAND / PERSON / ORG / PRODUCT / LOCATION
-  - Lista con label, badge tipo, contatore frequenza
-  - Paginazione (20 per pagina)
-  - GET `/analysis/entities?type=PERSON&page=1`
-- [x] `topics-panel.tsx`:
-  - Lista topic (Entity di tipo TOPIC) con content count
-  - Titoli sample (max 3) per topic
-  - GET `/analysis/topics`
-- [x] `content-health-card.tsx`:
-  - % contenuti con rawContent estratto
-  - Word count medio
-  - % per status (barre colorate)
-  - Calcolato server-side nella page
-- [x] Stato vuoto: "Nessuna analisi eseguita — clicca Avvia Analisi"
-- [x] Dati caricati server-side condizionalmente se `?tab=analysis` (stesso pattern Discovery)
-- **Note**: `ContentEntity.content` (non `contentItem`) è il nome relazione corretto nel schema Prisma
-- **Note**: `SerializedProjectScore` non include `projectId`, `createdAt`, `updatedAt` — serializzato esplicitamente
-- **Done when**: tab Analisi navigabile, score + entities + topics visibili, bottone avvia funziona ✅
-
-### Step 3.6 — Phase 3 Polish ✅
-- [x] `FULL_ANALYSIS` orchestration in `workers/discovery.ts`:
-  - Pipeline: `runExtractEntities` → `runGenerateEmbeddings` → `runClusterTopics` → `runComputeScore`
-  - EXTRACT e EMBED falliscono → abort (throw)
-  - CLUSTER: skip se < 6 embedding; se fallisce → warn + continua con SCORE (`{ errors: 1, skipped: false }`)
-  - SCORE sempre eseguito se EMBED non ha fallito
-- [x] `FullAnalysisPayload` aggiunto a `lib/queue.ts`, case `FULL_ANALYSIS` nel worker
-- [x] `POST /api/projects/:id/analysis/start` aggiornato → usa `FULL_ANALYSIS` (non più COMPUTE_SCORE)
-- [x] Audit: `ANALYSIS_JOB_STARTED/COMPLETED/FAILED` già presenti in `lib/audit.ts` e worker ✅
-- [x] Docker: volume `fastembed_models:/app/models` già in `docker-compose.yml`, `_CACHE_DIR = "/app/models"` in `embedder.py` ✅
-- [x] Performance: `@@index([projectId])` aggiunto a `content_items`; migration `add-content-items-project-id-index` applicata
-- [x] Edge cases: già gestiti — `rawContent IS NULL` skip embed, `embedding IS NULL` skip cluster, 0 items → score 0
-- [x] Invalidazione score: `isStale: true` già in `PATCH /content` e `PATCH /content/bulk` ✅
-- **Note**: worker separato non necessario — file discovery.ts ~1000 righe, gestibile
-- **Done when**: FULL_ANALYSIS robusto, edge cases gestiti, UX coerente con Fasi 1-2 ✅
+Altre pagine dashboard: `/dashboard` (KPI), `/content` (inventory cross-progetto), `/graph` (force graph entità), `/settings`, `/admin`
 
 ---
 
-## Fasi Future (Overview)
-
-| Fase | Contenuto | Stato |
-|------|-----------|-------|
-| 3 | Knowledge Graph: entity extraction, topic clustering, embeddings (pgvector), AI Readiness scoring | ✅ |
-| 4 | Dashboard, content inventory, knowledge graph visualization | ✅ |
-| 5 | Content Generation Agent: gap analysis, suggestions, pipeline, platform recommendations | 🔄 |
-| 6 | Polish & Launch: onboarding, landing page, Stripe billing, E2E tests | — |
-
-### Fase 5 — Content Generation Agent
-
-#### ✅ Step 5.0 — Content Gap Analysis
-`gap-analysis-card.tsx`: card nel tab Analisi con gap derivati dai dati esistenti — piattaforme mancanti/deboli, topic cluster con < 3 contenuti, entità con coverage < 25% dei contenuti approvati, freshness (contenuti > 6/12 mesi). Severity critical/warning per ciascun gap. Nessuna query LLM — 100% dati DB.
-**Build OK (41 route).**
-
----
-
-# Piano Dettagliato — Fase 5: Content Generation Agent
-
-## Decisioni Architetturali Fase 5
-
-### ADR-012: Per-item Suggestions — on demand + cache DB
-- **Problema**: le suggestions di `ScoreCard` sono a livello progetto (troppo generiche); gli utenti vogliono sapere *cosa migliorare in un contenuto specifico*
-- **Decisione**: per ogni `ContentItem` APPROVED con `rawContent`, generare 3-5 suggerimenti concreti via Claude Haiku; storarli in `ContentSuggestion` (upsert) per evitare ri-generazioni costose
-- **On demand**: trigger esplicito dall'utente (bottone in content detail) oppure batch da Analysis tab
-- **Cache**: se `ContentSuggestion` esiste con `generatedAt` recente e `rawContent` non è cambiato → mostrare cached; bottone "Rigenera" per refresh manuale
-- **Formato suggestion**: stringa plain text, 1-2 frasi, orientata all'azione ("Aggiungi una sezione su X", "Espandi il paragrafo Y con esempi concreti")
-- **Alternativa scartata**: generazione inline al page load (troppo lento, costoso ad ogni visita)
-
-### ADR-013: Content Brief — struttura e modello
-- **Problema**: il gap analysis mostra *dove* mancano contenuti ma non *cosa scrivere*; gli utenti hanno bisogno di una guida concreta
-- **Decisione**: per ogni gap critico/warning, generare un "brief" strutturato via Claude Haiku — guida alla scrittura con titolo proposto, piattaforma target, 5 key points, entità da menzionare, word count target
-- **Modello**: `claude-haiku-4-5-20251001` — output JSON via tool use (~$0.001/brief)
-- **Input al modello**: tipo gap (PLATFORM/TOPIC/ENTITY/FRESHNESS), label gap, top-5 entità progetto, 3 titoli di contenuto esistenti come reference di stile, nome progetto
-- **Dedup**: se esiste già un brief per stesso `(projectId, gapType, gapLabel)` non REJECTED, skip
-- **Status workflow**: `PENDING → ACCEPTED | REJECTED → DONE` (segnala che il contenuto è stato creato)
-- **Trigger**: manuale (bottone "Genera Brief" nel gap analysis), non automatico
-
-### ADR-014: Semantic Search — pgvector + query embedding
-- **Problema**: gli utenti vogliono sapere "quanto bene è coperto questo topic?" oppure trovare contenuti simili — full-text search non basta per query concettuali
-- **Decisione**: l'engine incorpora la query con lo stesso modello MiniLM-L12-v2 → Next.js fa la cosine distance search via pgvector `<=>` operator
-- **Soglia pertinenza**: cosine distance < 0.7 (similarity > 0.3); < 3 risultati → segnala "topic non ben coperto"
-- **Flusso**: client → Next.js API → engine `POST /api/embed/query` (embedding query) → Next.js `$queryRaw` pgvector → risultati filtrati per projectId
-- **Motivo split**: engine genera l'embedding (modello ONNX residente in Python), Next.js fa la query DB (già connesso a PostgreSQL con pgvector)
-- **Alternativa scartata**: full-text search `tsvector` — meno efficace per query concettuali e sinonimiche
-
-### ADR-015: Chat Agent — stateless + streaming SSE
-- **Problema**: gli utenti hanno domande strategiche sul loro content portfolio che il dashboard non può rispondere con metriche statiche
-- **Decisione**: chat stateless (nessuna persistenza DB dei messaggi — troppo overhead per MVP); ogni messaggio porta context iniettato via system prompt
-- **Contesto iniettato**: nome progetto, score + dimensioni, top-10 entità per frequenza, ultimi 3 gap critici, top-3 content items rilevanti alla query (RAG via semantic search)
-- **Streaming**: engine usa Anthropic SDK con `stream=True` → SSE; Next.js fa proxy con `TransformStream` → client `ReadableStream`
-- **Modello**: `claude-haiku-4-5-20251001` default; configurabile via env `CHAT_MODEL=claude-sonnet-4-6`
-- **Limite documentato nell'UI**: "La conversazione non viene salvata tra sessioni"
-- **Alternativa scartata**: LangChain/CrewAI — overhead eccessivo, dependency hell, per MVP non necessario
-
----
-
-## Schema Database — Fase 5
-
-```prisma
-// Step 5.1 — Suggestions per content item
-model ContentSuggestion {
-  id          String   @id @default(uuid())
-  contentId   String   @unique @map("content_id")   // una suggestion record per item
-  projectId   String   @map("project_id")
-  suggestions Json     @db.JsonB                      // string[]
-  generatedAt DateTime @map("generated_at")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  content ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
-  project Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@index([projectId])
-  @@map("content_suggestions")
-}
-
-// Step 5.2 — Content briefs dai gap
-enum BriefStatus {
-  PENDING    // generato, non ancora revisionato
-  ACCEPTED   // utente vuole agire su questo
-  REJECTED   // utente lo ha scartato
-  DONE       // contenuto creato per questo brief
-}
-
-model ContentBrief {
-  id              String       @id @default(uuid())
-  projectId       String       @map("project_id")
-  title           String       @db.VarChar(500)
-  platform        SourcePlatform
-  gapType         String       @map("gap_type") @db.VarChar(100)   // "PLATFORM" | "TOPIC" | "ENTITY" | "FRESHNESS"
-  gapLabel        String       @map("gap_label") @db.VarChar(255)   // es. "LinkedIn", "Machine Learning"
-  keyPoints       Json         @map("key_points") @db.JsonB          // string[] — punti chiave da coprire
-  entities        Json         @db.JsonB                              // string[] — entità da menzionare
-  targetWordCount Int?         @map("target_word_count")
-  notes           String?      @db.Text
-  status          BriefStatus  @default(PENDING)
-  generatedAt     DateTime     @map("generated_at")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  updatedAt       DateTime     @updatedAt @map("updated_at")
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@unique([projectId, gapType, gapLabel])   // dedup: un brief per gap
-  @@index([projectId, status])
-  @@map("content_briefs")
-}
-
-// Aggiungere a ContentItem:
-// suggestion ContentSuggestion?
-
-// Aggiungere a Project:
-// contentSuggestions ContentSuggestion[]
-// contentBriefs      ContentBrief[]
-```
-
----
-
-## API Design — Fase 5
-
-### Python Engine (nuovi endpoint)
-```
-POST /api/analyze/content-suggestion  → {id, title, text, entities[], project_name}
-                                        ← {id, suggestions: string[]}
-
-POST /api/analyze/content-brief       → {gap_type, gap_label, top_entities[], existing_titles[], platform, project_name}
-                                        ← {title, key_points[], entities[], target_word_count, notes}
-
-POST /api/embed/query                 → {text: str}
-                                        ← {embedding: float[384]}
-
-POST /api/chat/message                → {message, context: {project_name, score, dimensions, top_entities, gaps, relevant_content[]}}
-                                        ← streaming text/event-stream
-```
-
-### Next.js API (nuove route)
-```
-POST /api/projects/:id/content/:contentId/suggestions  → genera + upsert ContentSuggestion (202 o 200 se inline)
-GET  /api/projects/:id/content/:contentId/suggestions  → recupera ContentSuggestion cached o null
-
-POST /api/projects/:id/briefs/generate                 → avvia BullMQ GENERATE_BRIEFS job (202)
-GET  /api/projects/:id/briefs                          → lista brief con filtri status (default PENDING+ACCEPTED)
-PATCH /api/projects/:id/briefs/:briefId                → aggiorna status
-DELETE /api/projects/:id/briefs/:briefId               → elimina brief
-
-POST /api/projects/:id/search/semantic                 → {query, k?} → [{id, title, score, excerpt}]
-
-POST /api/projects/:id/chat                            → streaming: costruisce context + proxy SSE da engine
-```
-
-### BullMQ — nuovi job type
-```
-GENERATE_CONTENT_SUGGESTIONS  → batch: genera suggestions per tutti gli items APPROVED+rawContent senza suggestion recente
-GENERATE_BRIEFS               → legge gap analysis, chiama engine per ogni gap, crea ContentBrief (con dedup)
-```
-
-Aggiungere tipi in `lib/queue.ts` e relativi `run*()` in `workers/discovery.ts`.
-
----
-
-## Piano Step Atomici — Fase 5
-
-### Step 5.1 — Per-Content Improvement Suggestions ✅
-
-- [x] **Schema**: migration `add-content-suggestions`; modello `ContentSuggestion`; relazione `ContentItem.suggestion` e `Project.contentSuggestions`; `GENERATE_CONTENT_SUGGESTIONS` aggiunto a `AnalysisJobType`
-- [x] **Prisma generate + build check** — 43 route, 0 errori TypeScript
-- [x] **Engine**: `POST /api/analyze/content-suggestion` in `api/analyze.py`
-  - Input: `{id, title, text, entities: list[str], project_name}`
-  - Prompt Haiku: 3-5 suggerimenti in italiano, orientati all'azione; retry su 429
-  - Output: `{id, suggestions: list[str]}`
-- [x] **BullMQ**: `GENERATE_CONTENT_SUGGESTIONS` aggiunto a `lib/queue.ts` + handler `runGenerateContentSuggestions` nel worker
-  - Fetch APPROVED con rawContent, senza suggestion o generatedAt < 7gg, max 50 per job
-  - Upsert `ContentSuggestion`; `resultSummary`: `{processed, skipped, errors}`
-- [x] **Next.js API**:
-  - `GET /api/projects/:id/content/:contentId/suggestions` — ritorna `ContentSuggestion` o null
-  - `POST /api/projects/:id/content/:contentId/suggestions` — inline (sincrona, timeout 30s), upsert, 200
-  - `POST /api/projects/:id/analysis/suggestions` — batch job GENERATE_CONTENT_SUGGESTIONS, 202
-- [x] **UI**: `content-suggestions-card.tsx` nella content detail page (sidebar, sopra Metadati)
-  - Null: pulsante "Genera Suggerimenti" con descrizione
-  - Presenti: lista con ✦, data generazione, bottone "Rigenera" (icona)
-- [x] **Batch**: `generate-suggestions-button.tsx` nel tab Analisi (sotto GapAnalysisCard)
-- [x] **Audit**: `CONTENT_SUGGESTIONS_GENERATED` in `lib/audit.ts`
-- **Done when**: build OK (43 route), suggerimenti generati inline e via batch, rigenera funziona ✅
-
-### Step 5.2 — Content Brief Generator
-
-- [ ] **Schema**: migration `add-content-briefs`; enum `BriefStatus`; modello `ContentBrief`; relazione `Project.contentBriefs`
-- [ ] **Prisma generate + build check**
-- [ ] **Engine**: `POST /api/analyze/content-brief` in `api/analyze.py`
-  - Input: `{gap_type, gap_label, top_entities, existing_titles, platform, project_name}`
-  - Prompt Haiku (tool use): genera brief strutturato con title, key_points (5), entities (3-5), target_word_count, notes
-  - Output: `{title, key_points, entities, target_word_count, notes}`
-- [ ] **BullMQ**: aggiungere `GENERATE_BRIEFS` al worker
-  - Ricalcola gap analysis (stesso logic di `gap-analysis-card.tsx` ma in TypeScript puro)
-  - Per ogni gap severity=CRITICAL o WARNING: chiama engine; `prisma.contentBrief.upsert` (@@unique dedup)
-  - `resultSummary`: `{briefsGenerated, skipped, errors}`
-- [ ] **Next.js API**:
-  - `POST /api/projects/:id/briefs/generate` — check ownership + active job; enqueue; 202
-  - `GET /api/projects/:id/briefs?status=PENDING,ACCEPTED` — paginata (limit 20)
-  - `PATCH /api/projects/:id/briefs/:briefId` — body `{status: BriefStatus}`; ownership check; aggiorna
-  - `DELETE /api/projects/:id/briefs/:briefId` — hard delete; ownership check
-- [ ] **UI**: tab `?tab=briefs` nella pagina progetto
-  - Header: conteggio brief per status + pulsante "Genera Brief"
-  - `AnalysisJobStatus` riusato per mostrare stato job `GENERATE_BRIEFS`
-  - Lista brief in cards:
-    - Badge `gapType` colorato (PLATFORM=blue, TOPIC=purple, ENTITY=orange, FRESHNESS=yellow)
-    - Titolo proposto (bold), badge piattaforma
-    - Key points collassabili (accordion)
-    - Entità da menzionare (chip list)
-    - Word count target badge
-    - Azioni: Accetta / Scarta / Fatto
-  - Filtri: PENDING | ACCEPTED | DONE | REJECTED
-  - Empty state: "Nessun brief — clicca Genera Brief per iniziare"
-- [ ] **Audit**: `BRIEFS_GENERATED` in `lib/audit.ts`
-- **Done when**: build OK, brief generati dai gap, visualizzati in tab dedicato, status modificabile
-
-### Step 5.3 — Semantic Search
-
-- [ ] **Engine**: `POST /api/embed/query` in `api/embed.py`
-  - Input: `{text: str}`; embedding singola stringa con `EmbedderAgent`
-  - Output: `{embedding: list[float]}`
-- [ ] **Next.js API**: `POST /api/projects/:id/search/semantic`
-  - Body: `{query: string, k?: number}` (default k=10)
-  - Ownership check; chiama engine per embedding query
-  - pgvector query: `SELECT id, title, "rawContent", (embedding <=> $1::vector) AS distance FROM content_items WHERE project_id = $2 AND embedding IS NOT NULL ORDER BY distance LIMIT $3`
-  - Filtra per `distance < 0.7`; calcola `score = round((1 - distance) * 100)`; tronca excerpt a 200 chars
-  - Ritorna `{data: [{id, title, excerpt, score, url}], query, count}`
-- [ ] **UI**: `semantic-search-panel.tsx` nella tab Analisi (sopra o sotto l'entities panel)
-  - Input testuale con placeholder "Cerca un topic o concetto…" + bottone "Cerca"
-  - Loading state (spinner nella barra)
-  - Risultati: lista con titolo (link), badge similarità (es. "87%"), snippet excerpt
-  - Se < 3 risultati: alert "⚠ Questo topic non è ben coperto nel tuo content portfolio"
-  - Se 0 risultati: empty state "Nessun contenuto trovato su questo topic — considera di creare un brief"
-  - Nessun risultato prima di una ricerca (blank state)
-- **Done when**: build OK, ricerca semantica funziona, risultati mostrati con score, gap evidenziati
-
-### Step 5.4 — Conversational Agent (Chat)
-
-- [ ] **Engine**: `POST /api/chat/message` con streaming in `api/chat.py` (nuovo file)
-  - Input: `{message, context: {project_name, overall_score, dimensions, top_entities, recent_gaps, relevant_content}}`
-  - System prompt: inserisce tutti i campi del context; istruisce il modello a rispondere in italiano, in modo conciso e orientato all'azione
-  - Streaming: `client.messages.stream(...)` → yield SSE tokens `data: {token}\n\n`; `data: [DONE]\n\n` in chiusura
-  - Modello: `CHAT_MODEL` env var (default `claude-haiku-4-5-20251001`)
-  - Errori non-streaming: ritorna JSON `{error}` con status appropriato
-- [ ] **Next.js API**: `POST /api/projects/:id/chat` (streaming)
-  - Ownership check; costruisce context:
-    1. `ProjectScore` dal DB (score + dimensions)
-    2. Top-10 `Entity` per frequenza
-    3. Ultimi 3 gap critici (stessa logica gap analysis)
-    4. Top-3 semantic search results del messaggio utente (chiama engine `embed/query` + pgvector)
-  - Proxy SSE: `fetch(engine/chat/message, {body})` → `TransformStream` → `new Response(stream, {headers: {'Content-Type': 'text/event-stream'}})`
-- [ ] **UI**: `chat-panel.tsx` — sezione nel tab Analisi (in fondo) o tab dedicato `?tab=chat`
-  - Area messaggi scrollabile con bolle stile chat (utente destra/grigio, AI sinistra/bianco)
-  - Input + bottone Invia; Invio per inviare, Shift+Invio per newline
-  - Streaming rendering: testo appende token per token (tipo ChatGPT)
-  - Loading indicator durante prima risposta (spinner in bolla AI)
-  - Prompt suggeriti (clickable chips): "Quali contenuti creare?", "Come migliorare lo score?", "Quali topic mancano?", "Analizza i gap critici"
-  - Disclaimer footer: "La conversazione non viene salvata tra sessioni"
-  - `clearChat()` bottone per reset conversazione
-- **Done when**: build OK, chat funzionante con streaming visibile, risposte contestualizzate al progetto
-
-### Step 5.5 — Phase 5 Polish
-
-- [ ] Loading skeletons per sezioni Suggestions, Briefs, Semantic Search
-- [ ] Empty states coerenti con Fasi 1-4
-- [ ] Error handling: engine down → toast/alert graceful per ogni feature; retry per BullMQ jobs
-- [ ] Mobile responsiveness per nuove sezioni (chat, briefs, search)
-- [ ] Performance: limit query DB; paginazione briefs (già prevista); semantic search max k=20
-- [ ] Audit log: `CONTENT_SUGGESTIONS_GENERATED`, `BRIEFS_GENERATED` in `lib/audit.ts`
-- [ ] Update navigazione sidebar/tab per accesso alle nuove sezioni
-- [ ] ADR table aggiornata in CLAUDE.md (ADR-012 → ADR-015)
-- [ ] Test manuale end-to-end di tutti i flow
-- **Done when**: UX coerente con Fasi 1-4, tutti gli edge case gestiti, build OK senza errori TypeScript
-
----
-
-### Fase 4 — completata
-
-- `/dashboard`: KPI strip (progetti attivi, contenuti, approvati, score AI medio), tabella progetti con score badge e isStale, breakdown status contenuti con barra visiva, ultime 5 analisi completate
-- `/content`: content inventory cross-progetto — filtri (progetto, status, piattaforma, tipo, ricerca testo), tabella paginata 25/pagina con link a detail e progetto
-- `/graph`: knowledge graph interattivo (`react-force-graph-2d`) — nodi = entità per tipo colorato, dimensione per frequenza; archi = co-occorrenza in content items (raw SQL); selector progetto, legenda, tooltip hover
-
----
-
-## ADR — Decisioni Architetturali
+## Decisioni Architetturali (ADR)
 
 | # | Decisione |
 |---|-----------|
-| 005 | Fase 2 split: CRUD first (Next.js), poi FastAPI |
-| 006 | Web crawling con librerie proprie (httpx + BeautifulSoup / Playwright) |
-| 007 | Platform search: **Brave Search API** (Google CSE scartato) |
-| 008 | Python engine come servizio Docker separato, porta 8000 |
-| 009 | Embeddings: **fastembed** (ONNX, ~200 MB), modello multilingual-MiniLM-L12-v2 384 dim |
-| 010 | Entity extraction: **Claude Haiku** con structured tool use, batch 1 item/chiamata |
-| 011 | AI Readiness Score: 5 dimensioni calcolate in Next.js SQL; suggestions via Claude Haiku |
-| 012 | Per-item suggestions: on demand + cache DB (`ContentSuggestion`), max 50/job batch |
-| 013 | Content brief generation: Claude Haiku structured output; dedup su `(projectId, gapType, gapLabel)` |
-| 014 | Semantic search: pgvector cosine distance, engine genera embedding query, Next.js fa la search |
-| 015 | Chat agent: stateless (no DB), context injection via system prompt, streaming SSE |
+| 007 | Platform search: **Brave Search API** (Google CSE abbandonato — 403 org policy) |
+| 008 | Python engine Docker separato, porta 8000, shared secret `ENGINE_API_KEY` |
+| 009 | Embeddings: **fastembed** ONNX locale, MiniLM-L12-v2 384 dim, no costi API |
+| 010 | Entity extraction: Claude Haiku structured tool use, 1 item/call |
+| 011 | AI Readiness Score: 5 dimensioni SQL in Next.js; suggestions via Haiku |
+| 012 | Per-item suggestions: on demand + cache `ContentSuggestion`, rigenerabile |
+| 013 | Content briefs: Haiku JSON output, dedup `(projectId, gapType, gapLabel)` |
+| 014 | Semantic search: engine embed query → Next.js pgvector `<=>`, soglia distance < 0.7, solo APPROVED |
+| 015 | Chat: stateless, context injection (score + entità + gap + RAG), streaming SSE |
 
 ---
 
-## Env Vars Chiave
+## Env Vars
 
-| Variabile | Dove | Note |
-|-----------|------|------|
-| `DATABASE_URL` | `.env.local` + Docker | PostgreSQL |
-| `AUTH_SECRET` | `.env.local` | NextAuth |
-| `BRAVE_SEARCH_API_KEY` | `.env` + `.env.local` | 2.000 query/mese gratis |
-| `ENGINE_API_KEY` | `.env` + `.env.local` | shared secret Next.js ↔ engine |
-| `ENGINE_URL` | `.env.local` | `http://localhost:8000` in dev |
-| `ANTHROPIC_API_KEY` | `.env` + `.env.local` | Fase 3+ |
+| Variabile | Note |
+|-----------|------|
+| `DATABASE_URL` | PostgreSQL |
+| `AUTH_SECRET` | NextAuth |
+| `BRAVE_SEARCH_API_KEY` | 2.000 query/mese gratis |
+| `ENGINE_API_KEY` | shared secret Next.js ↔ engine |
+| `ENGINE_URL` | `http://localhost:8000` in dev |
+| `ANTHROPIC_API_KEY` | Claude API |
+| `CHAT_MODEL` | default `claude-haiku-4-5-20251001` |
 
 ---
 
 ## Note per Claude Code
 
 - **Leggi sempre questo file** prima di iniziare qualsiasi task
-- **Aggiorna questo file** dopo ogni step completato (stato, ultimo commit, checkbox)
-- **Un step alla volta**: completa e verifica prima di procedere
-- **Segui le convenzioni** rigorosamente
-- **Crea un ADR** per ogni decisione architetturale significativa
+- **Aggiorna questo file** dopo ogni step: stato corrente, ultimo commit
+- **Un step alla volta**: build OK prima di procedere
+- Rebuild Docker engine dopo ogni modifica Python: `docker compose build engine && docker compose up -d engine`
+- `prisma generate` dopo ogni `migrate dev`
+- Tutti i comandi npm dalla root del monorepo (workspaces)
+
+---
+
+## Prossimo: Step 6 — Refactor Navigazione
+
+Da definire con l'utente: riposizionamento di alcune funzionalità, revisione della struttura tab/sidebar.

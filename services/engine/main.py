@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.analyze import router as analyze_router
+from api.chat import router as chat_router
 from api.crawl import router as crawl_router
 from api.embed import router as embed_router
 from api.extract import router as extract_router
@@ -35,3 +36,4 @@ app.include_router(search_router)
 app.include_router(extract_router)
 app.include_router(embed_router)
 app.include_router(analyze_router)
+app.include_router(chat_router)
