@@ -6,7 +6,9 @@ export const CreateProjectSchema = z.object({
   domain: z.string().trim().max(255).optional(),
 });
 
-export const UpdateProjectSchema = CreateProjectSchema.partial();
+export const UpdateProjectSchema = CreateProjectSchema.partial().extend({
+  status: z.enum(["ACTIVE"]).optional(),
+});
 
 export type CreateProjectData = z.infer<typeof CreateProjectSchema>;
 export type UpdateProjectData = z.infer<typeof UpdateProjectSchema>;

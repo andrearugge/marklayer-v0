@@ -1,5 +1,6 @@
 import { MobileNav } from "./mobile-nav";
 import { Breadcrumbs } from "./breadcrumbs";
+import { NotificationBell } from "./notification-bell";
 import { UserButton } from "@/components/auth/user-button";
 import { Separator } from "@/components/ui/separator";
 
@@ -10,7 +11,10 @@ export function Header({ projectCount }: { projectCount?: number }) {
       <Separator orientation="vertical" className="mx-3 h-4 lg:hidden" />
       <div className="flex flex-1 items-center justify-between">
         <Breadcrumbs />
-        <UserButton />
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <UserButton />
+        </div>
       </div>
     </header>
   );

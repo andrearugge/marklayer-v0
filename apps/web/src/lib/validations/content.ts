@@ -37,22 +37,51 @@ export type EditContentFormData = z.infer<typeof EditContentFormSchema>;
 
 export const ContentQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
   status: z.nativeEnum(ContentStatus).optional().catch(undefined),
   sourcePlatform: z.nativeEnum(SourcePlatform).optional().catch(undefined),
   contentType: z.nativeEnum(ContentType).optional().catch(undefined),
   search: z.string().trim().optional(),
   sortBy: z.enum(["createdAt", "publishedAt", "title"]).default("createdAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
+  fetchStatus: z.enum(["fetched", "pending", "error"]).optional().catch(undefined),
 });
 
 export type ContentQueryData = z.infer<typeof ContentQuerySchema>;
 
 // ─── Bulk action schema ───────────────────────────────────────────────────────
 
-export const BulkActionSchema = z.object({
-  ids: z.array(z.string()).min(1, "Seleziona almeno un elemento").max(100),
-  action: z.enum(["approve", "reject", "archive", "delete"]),
+export const BulkFiltersSchema = z.object({
+  status: z.string().optional(),
+  sourcePlatform: z.string().optional(),
+  contentType: z.string().optional(),
+  search: z.string().optional(),
+  fetchStatus: z.string().optional(),
 });
 
+export const BulkActionSchema = z
+  .object({
+    ids: z.array(z.string()).max(100).optional(),
+    selectAll: z.boolean().optional(),
+    filters: BulkFiltersSchema.optional(),
+    action: z.enum(["approve", "reject", "archive", "delete", "fetch"]),
+  })
+  .refine(
+    (data) =>
+      data.selectAll === true ||
+      (Array.isArray(data.ids) && data.ids.length > 0),
+    { message: "Seleziona almeno un elemento" }
+  );
+
 export type BulkActionData = z.infer<typeof BulkActionSchema>;
+
+// ─── Discovery schedule ───────────────────────────────────────────────────────
+
+export const DiscoveryScheduleSchema = z.object({
+  jobType: z.enum(["FULL_DISCOVERY", "CRAWL_SITE", "SEARCH_PLATFORM"]),
+  frequency: z.enum(["weekly", "monthly", "quarterly"]),
+  config: z.record(z.string(), z.unknown()),
+  enabled: z.boolean().default(true),
+});
+
+export type DiscoveryScheduleValues = z.infer<typeof DiscoveryScheduleSchema>;

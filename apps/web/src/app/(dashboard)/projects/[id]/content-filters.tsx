@@ -18,6 +18,7 @@ interface ContentFiltersProps {
   initialPlatform: string;
   initialType: string;
   initialStatus: string;
+  initialFetchStatus: string;
 }
 
 export function ContentFilters({
@@ -25,6 +26,7 @@ export function ContentFilters({
   initialPlatform,
   initialType,
   initialStatus,
+  initialFetchStatus,
 }: ContentFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -67,7 +69,8 @@ export function ContentFilters({
     });
   }
 
-  const hasFilters = initialSearch || initialPlatform || initialType || initialStatus;
+  const hasFilters =
+    initialSearch || initialPlatform || initialType || initialStatus || initialFetchStatus;
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -141,6 +144,22 @@ export function ContentFilters({
           <SelectItem value="APPROVED">Approvato</SelectItem>
           <SelectItem value="REJECTED">Rifiutato</SelectItem>
           <SelectItem value="ARCHIVED">Archiviato</SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Select
+        defaultValue={initialFetchStatus || "all"}
+        onValueChange={(v) => handleSelect("fetchStatus", v)}
+        disabled={isPending}
+      >
+        <SelectTrigger className="w-44">
+          <SelectValue placeholder="Scaricamento" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Tutti</SelectItem>
+          <SelectItem value="fetched">Scaricati</SelectItem>
+          <SelectItem value="pending">Da scaricare</SelectItem>
+          <SelectItem value="error">Con errori</SelectItem>
         </SelectContent>
       </Select>
 

@@ -1,10 +1,21 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ExternalLink, Trash2, CheckCheck, Archive, ThumbsDown, X } from "lucide-react";
+import {
+  ExternalLink,
+  Trash2,
+  CheckCheck,
+  Archive,
+  ThumbsDown,
+  X,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  Download,
+} from "lucide-react";
 import type { SourcePlatform, ContentType, ContentStatus } from "@prisma/client";
 import {
   PLATFORM_LABELS,
@@ -33,6 +44,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export type ContentRow = {
   id: string;
@@ -44,32 +61,115 @@ export type ContentRow = {
   wordCount: number | null;
   publishedAt: string | null;
   createdAt: string;
+  hasRawContent: boolean;
+  fetchError: string | null;
 };
+
+interface ContentFilters {
+  status?: string;
+  sourcePlatform?: string;
+  contentType?: string;
+  search?: string;
+  fetchStatus?: string;
+}
 
 interface ContentTableProps {
   items: ContentRow[];
   projectId: string;
+  fetchErrorCount?: number;
+  totalFilteredCount: number;
+  currentFilters: ContentFilters;
 }
 
-export function ContentTable({ items, projectId }: ContentTableProps) {
+// ─── Error log dialog ──────────────────────────────────────────────────────────
+
+function ErrorLogDialog({
+  open,
+  onClose,
+  projectId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  projectId: string;
+}) {
+  const [items, setItems] = useState<{ id: string; title: string; fetchError: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch error items when dialog opens
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    fetch(`/api/projects/${projectId}/content?fetchStatus=error&limit=100`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.data?.items) setItems(d.data.items);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [open, projectId]);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Log errori di estrazione</DialogTitle>
+        </DialogHeader>
+        {loading ? (
+          <p className="text-sm text-muted-foreground py-4">Caricamento…</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4">Nessun errore trovato.</p>
+        ) : (
+          <div className="space-y-3 max-h-80 overflow-y-auto">
+            {items.map((item) => (
+              <div key={item.id} className="rounded-md border p-3 space-y-1">
+                <p className="text-sm font-medium truncate">{item.title}</p>
+                <p className="text-xs text-red-600 dark:text-red-400 font-mono break-all">
+                  {item.fetchError}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
+
+export function ContentTable({
+  items,
+  projectId,
+  fetchErrorCount = 0,
+  totalFilteredCount,
+  currentFilters,
+}: ContentTableProps) {
   const router = useRouter();
   const headerCheckboxRef = useRef<HTMLButtonElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectAllMode, setSelectAllMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showErrorLog, setShowErrorLog] = useState(false);
 
   const allSelected = items.length > 0 && selectedIds.size === items.length;
   const someSelected = selectedIds.size > 0 && selectedIds.size < items.length;
+  // Show "select all N" banner only when the current page doesn't cover all filtered items
+  const showSelectAllBanner =
+    allSelected && !selectAllMode && totalFilteredCount > items.length;
 
   function toggleAll() {
     if (allSelected) {
       setSelectedIds(new Set());
+      setSelectAllMode(false);
     } else {
       setSelectedIds(new Set(items.map((i) => i.id)));
+      setSelectAllMode(false);
     }
   }
 
   function toggleItem(id: string) {
+    setSelectAllMode(false);
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -80,14 +180,22 @@ export function ContentTable({ items, projectId }: ContentTableProps) {
 
   function clearSelection() {
     setSelectedIds(new Set());
+    setSelectAllMode(false);
   }
 
-  async function executeBulkAction(action: "approve" | "reject" | "archive" | "delete") {
+  async function executeBulkAction(
+    action: "approve" | "reject" | "archive" | "delete" | "fetch"
+  ) {
     setIsLoading(true);
+
+    const body = selectAllMode
+      ? { selectAll: true, filters: currentFilters, action }
+      : { ids: [...selectedIds], action };
+
     const res = await fetch(`/api/projects/${projectId}/content/bulk`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: [...selectedIds], action }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     setIsLoading(false);
@@ -98,26 +206,64 @@ export function ContentTable({ items, projectId }: ContentTableProps) {
     }
 
     const n = data.data.count as number;
-    const actionLabels: Record<string, string> = {
-      approve: "approvati",
-      reject: "rifiutati",
-      archive: "archiviati",
-      delete: "eliminati",
-    };
-    toast.success(`${n} contenut${n === 1 ? "o" : "i"} ${actionLabels[action]}.`);
+
+    if (action === "fetch") {
+      const e = (data.data.errors as number) ?? 0;
+      if (e > 0) {
+        toast.success(
+          `${n} contenut${n === 1 ? "o" : "i"} estratti, ${e} con errori.`
+        );
+      } else {
+        toast.success(`${n} contenut${n === 1 ? "o" : "i"} estratti.`);
+      }
+    } else {
+      const actionLabels: Record<string, string> = {
+        approve: "approvati",
+        reject: "rifiutati",
+        archive: "archiviati",
+        delete: "eliminati",
+      };
+      toast.success(`${n} contenut${n === 1 ? "o" : "i"} ${actionLabels[action]}.`);
+    }
+
     setSelectedIds(new Set());
+    setSelectAllMode(false);
     router.refresh();
   }
 
   return (
     <div className="space-y-2">
+      {/* ── Fetch error banner ── */}
+      {fetchErrorCount > 0 && (
+        <div className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm dark:border-red-900/50 dark:bg-red-950/20">
+          <span className="text-red-700 dark:text-red-400">
+            <AlertCircle className="inline h-3.5 w-3.5 mr-1.5 align-text-bottom" />
+            {fetchErrorCount} contenut{fetchErrorCount === 1 ? "o" : "i"} con errori di estrazione.
+          </span>
+          <Button variant="ghost" size="sm" onClick={() => setShowErrorLog(true)}>
+            Vedi log
+          </Button>
+        </div>
+      )}
+
       {/* ── Bulk action toolbar ── */}
       {selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
           <span className="text-sm font-medium">
-            {selectedIds.size} selezionat{selectedIds.size === 1 ? "o" : "i"}
+            {selectAllMode
+              ? `Tutti i ${totalFilteredCount} element${totalFilteredCount === 1 ? "o" : "i"} selezionat${totalFilteredCount === 1 ? "o" : "i"}`
+              : `${selectedIds.size} selezionat${selectedIds.size === 1 ? "o" : "i"}`}
           </span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isLoading}
+              onClick={() => executeBulkAction("fetch")}
+            >
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Estrai
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -167,6 +313,19 @@ export function ContentTable({ items, projectId }: ContentTableProps) {
         </div>
       )}
 
+      {/* ── Select-all cross-page banner (Gmail pattern) ── */}
+      {showSelectAllBanner && (
+        <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-400">
+          Selezionati {items.length} element{items.length === 1 ? "o" : "i"} in questa pagina.{" "}
+          <button
+            className="underline font-medium hover:no-underline"
+            onClick={() => setSelectAllMode(true)}
+          >
+            Seleziona tutti i {totalFilteredCount} element{totalFilteredCount === 1 ? "o" : "i"}
+          </button>
+        </div>
+      )}
+
       {/* ── Table ── */}
       <div className="rounded-md border">
         <Table>
@@ -185,6 +344,7 @@ export function ContentTable({ items, projectId }: ContentTableProps) {
               <TableHead className="w-32">Piattaforma</TableHead>
               <TableHead className="w-28">Tipo</TableHead>
               <TableHead className="w-28">Status</TableHead>
+              <TableHead className="w-28">Contenuto</TableHead>
               <TableHead className="w-32 text-right">Data</TableHead>
             </TableRow>
           </TableHeader>
@@ -250,6 +410,31 @@ export function ContentTable({ items, projectId }: ContentTableProps) {
                   </span>
                 </TableCell>
 
+                {/* ── Raw content status ── */}
+                <TableCell>
+                  {item.hasRawContent ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-500">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Scaricato
+                    </span>
+                  ) : item.fetchError ? (
+                    <span
+                      className="inline-flex items-center gap-1 text-xs text-red-500 cursor-help"
+                      title={item.fetchError}
+                    >
+                      <AlertCircle className="h-3.5 w-3.5" />
+                      Errore
+                    </span>
+                  ) : item.url ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      <Clock className="h-3.5 w-3.5" />
+                      Da scaricare
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+
                 <TableCell className="text-right text-xs text-muted-foreground">
                   {new Date(
                     item.publishedAt ?? item.createdAt
@@ -273,7 +458,9 @@ export function ContentTable({ items, projectId }: ContentTableProps) {
             <AlertDialogDescription>
               Vuoi eliminare definitivamente{" "}
               <strong>
-                {selectedIds.size} contenut{selectedIds.size === 1 ? "o" : "i"}
+                {selectAllMode
+                  ? `tutti i ${totalFilteredCount} element${totalFilteredCount === 1 ? "o" : "i"}`
+                  : `${selectedIds.size} contenut${selectedIds.size === 1 ? "o" : "i"}`}
               </strong>
               ? Questa operazione non può essere annullata.
             </AlertDialogDescription>
@@ -292,6 +479,13 @@ export function ContentTable({ items, projectId }: ContentTableProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Error log dialog ── */}
+      <ErrorLogDialog
+        open={showErrorLog}
+        onClose={() => setShowErrorLog(false)}
+        projectId={projectId}
+      />
     </div>
   );
 }

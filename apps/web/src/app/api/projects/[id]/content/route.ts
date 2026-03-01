@@ -39,6 +39,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   }
 
   const { searchParams } = new URL(req.url);
+  const fetchStatus = searchParams.get("fetchStatus") ?? undefined; // "fetched" | "pending" | "error"
   const parsed = ContentQuerySchema.safeParse({
     page: searchParams.get("page") ?? undefined,
     limit: searchParams.get("limit") ?? undefined,
@@ -61,6 +62,9 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     ...(sourcePlatform ? { sourcePlatform } : {}),
     ...(contentType ? { contentType } : {}),
     ...(search ? { title: { contains: search, mode: "insensitive" } } : {}),
+    ...(fetchStatus === "fetched" ? { rawContent: { not: null } } : {}),
+    ...(fetchStatus === "pending" ? { rawContent: null, fetchError: null, url: { not: null } } : {}),
+    ...(fetchStatus === "error" ? { fetchError: { not: null } } : {}),
   };
 
   const orderBy: Prisma.ContentItemOrderByWithRelationInput =
@@ -84,6 +88,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         wordCount: true,
         publishedAt: true,
         createdAt: true,
+        fetchError: true,
       },
       orderBy,
       skip: (page - 1) * limit,

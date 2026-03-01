@@ -32,9 +32,11 @@ model User {
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
-  accounts Account[]
-  sessions Session[]
-  projects Project[]
+  accounts           Account[]
+  sessions           Session[]
+  projects           Project[]
+  notifications      Notification[]
+  discoverySchedules DiscoverySchedule[]
 
   @@map("users")
 }
@@ -95,6 +97,23 @@ model AuditLog {
   @@index([targetId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  type      String   @db.VarChar(50)
+  title     String   @db.VarChar(255)
+  message   String   @db.Text
+  link      String   @db.VarChar(500)
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }
 
 // ─── Project enums ────────────────────────────────────────────────────────────
@@ -212,6 +231,7 @@ model Project {
   analysisJobs       AnalysisJob[]
   contentSuggestions ContentSuggestion[]
   contentBriefs      ContentBrief[]
+  discoverySchedule  DiscoverySchedule?
 
   @@index([userId])
   @@map("projects")
@@ -233,6 +253,7 @@ model ContentItem {
   language        String?         @db.VarChar(10)
   publishedAt     DateTime?       @map("published_at")
   lastCrawledAt   DateTime?       @map("last_crawled_at")
+  fetchError      String?         @map("fetch_error") @db.Text
   metadata        Json?           @db.JsonB
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")
@@ -394,4 +415,26 @@ model ContentBrief {
   @@unique([projectId, gapType, gapLabel])
   @@index([projectId, status])
   @@map("content_briefs")
+}
+
+// ─── Phase 6 models ───────────────────────────────────────────────────────────
+
+model DiscoverySchedule {
+  id        String    @id @default(uuid())
+  projectId String    @unique @map("project_id")
+  userId    String    @map("user_id")
+  jobType   String    @map("job_type") @db.VarChar(50)
+  frequency String    @db.VarChar(20)
+  config    Json      @db.JsonB
+  enabled   Boolean   @default(true)
+  nextRunAt DateTime  @map("next_run_at")
+  lastRunAt DateTime? @map("last_run_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([enabled, nextRunAt])
+  @@map("discovery_schedules")
 }
