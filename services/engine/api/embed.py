@@ -2,8 +2,9 @@
 Embedding API
 
 POST /api/embed/batch — generate vector embeddings for a list of text items.
+POST /api/embed/query — generate a single embedding for a search query.
 Uses fastembed with paraphrase-multilingual-MiniLM-L12-v2 (384 dims).
-Max 100 items per request.
+Max 100 items per request (batch).
 """
 
 from fastapi import APIRouter, Depends
@@ -88,3 +89,33 @@ async def embed_batch(req: EmbedBatchRequest) -> EmbedBatchResponse:
             for r in results
         ]
     )
+
+
+# ─── Query embedding ───────────────────────────────────────────────────────────
+
+
+class EmbedQueryRequest(BaseModel):
+    text: str
+
+
+class EmbedQueryResponse(BaseModel):
+    embedding: list[float]
+
+
+@router.post("/query", response_model=EmbedQueryResponse)
+async def embed_query(req: EmbedQueryRequest) -> EmbedQueryResponse:
+    """
+    Generate a single 384-dimensional embedding for a search query string.
+    Used by the semantic search feature on the Next.js side.
+    """
+    agent = EmbedderAgent()
+
+    if not agent.is_configured():
+        return EmbedQueryResponse(embedding=[])
+
+    results = await agent.embed_batch(
+        [EmbedRequest(id="query", text=req.text.strip())]
+    )
+    if results and results[0].embedding:
+        return EmbedQueryResponse(embedding=results[0].embedding)
+    return EmbedQueryResponse(embedding=[])
