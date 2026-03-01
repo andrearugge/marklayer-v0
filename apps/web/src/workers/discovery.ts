@@ -16,7 +16,7 @@ import { config } from "dotenv";
 // Load env before any other import that might need env vars
 config({ path: path.resolve(process.cwd(), ".env.local") });
 
-import { Worker } from "bullmq";
+import { Worker, Queue } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { Prisma, SourcePlatform, ContentType } from "@prisma/client";
@@ -1376,12 +1376,53 @@ analysisWorker.on("failed", (job, err) =>
 
 console.log(`[worker] Analysis worker started — queue: ${ANALYSIS_QUEUE_NAME}`);
 
+// ─── Maintenance queue (scheduled jobs) ──────────────────────────────────────
+
+const MAINTENANCE_QUEUE_NAME = "maintenance";
+
+const maintenanceQueue = new Queue(MAINTENANCE_QUEUE_NAME, {
+  connection: redisConnection,
+});
+
+const maintenanceWorker = new Worker(
+  MAINTENANCE_QUEUE_NAME,
+  async (job) => {
+    if (job.name === "CLEANUP_AUDIT_LOGS") {
+      const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const { count } = await prisma.auditLog.deleteMany({
+        where: { createdAt: { lt: cutoff } },
+      });
+      console.log(`[maintenance] Deleted ${count} audit log${count === 1 ? "" : "s"} older than 7 days`);
+    }
+  },
+  { connection: redisConnection }
+);
+
+maintenanceWorker.on("failed", (job, err) =>
+  console.error(`[maintenance] ✗ Job ${job?.id} failed:`, err.message)
+);
+
+// Schedule daily cleanup at 03:00 server time.
+// The stable jobId prevents duplicate schedules across worker restarts.
+await maintenanceQueue.add(
+  "CLEANUP_AUDIT_LOGS",
+  {},
+  {
+    repeat: { pattern: "0 3 * * *" },
+    jobId: "cleanup-audit-logs-daily",
+  }
+);
+
+console.log("[worker] Maintenance worker started — audit log cleanup scheduled at 03:00 daily");
+
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 
 async function shutdown() {
   console.log("[worker] Shutting down...");
   await worker.close();
   await analysisWorker.close();
+  await maintenanceWorker.close();
+  await maintenanceQueue.close();
   await prisma.$disconnect();
   process.exit(0);
 }

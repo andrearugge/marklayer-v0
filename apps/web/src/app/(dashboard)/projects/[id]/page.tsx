@@ -15,7 +15,6 @@ import {
   FileText,
   Download,
   Zap,
-  BarChart2,
   BookOpen,
   PlusCircle,
   CheckCircle2,
@@ -86,7 +85,7 @@ export default async function ProjectDashboardPage({ params }: PageProps) {
 
   // ── Stats ──────────────────────────────────────────────────────────────────
 
-  const [totalCount, byStatus, byPlatform, projectScore, briefsCount, unfetchedCount] =
+  const [totalCount, byStatus, byPlatform, projectScore, briefsCount, unfetchedCount, rawContentCount] =
     await Promise.all([
       prisma.contentItem.count({ where: { projectId: id } }),
       prisma.contentItem.groupBy({
@@ -106,6 +105,9 @@ export default async function ProjectDashboardPage({ params }: PageProps) {
       prisma.contentBrief.count({ where: { projectId: id } }),
       prisma.contentItem.count({
         where: { projectId: id, url: { not: null }, rawContent: null, status: { not: "REJECTED" } },
+      }),
+      prisma.contentItem.count({
+        where: { projectId: id, rawContent: { not: null } },
       }),
     ]);
 
@@ -161,7 +163,7 @@ export default async function ProjectDashboardPage({ params }: PageProps) {
       icon: PlusCircle,
       title: "Aggiungi contenuti",
       description: "Importa URL, incolla testo o avvia una discovery automatica per trovare i tuoi contenuti esistenti.",
-      status: "active",
+      status: totalCount > 0 ? "completed" : "active",
       action: (
         <Button asChild size="sm">
           <Link href={`/projects/${id}/content`}>Vai ai contenuti</Link>
@@ -172,7 +174,7 @@ export default async function ProjectDashboardPage({ params }: PageProps) {
       icon: Download,
       title: "Scarica testo raw",
       description: "Scarica il testo completo dei contenuti aggiunti per abilitare l'analisi AI.",
-      status: totalCount === 0 ? "disabled" : unfetchedCount > 0 ? "active" : "completed",
+      status: totalCount === 0 ? "disabled" : rawContentCount > 0 ? "completed" : "active",
       action: totalCount > 0 ? (
         <FetchContentButton projectId={id} unfetchedCount={unfetchedCount} />
       ) : (
@@ -182,24 +184,17 @@ export default async function ProjectDashboardPage({ params }: PageProps) {
     {
       icon: Zap,
       title: "Avvia analisi AI",
-      description: "Estrai entità, genera embedding e calcola il tuo AI Readiness Score.",
-      status: approvedCount === 0 ? "disabled" : hasScore && !projectScore?.isStale ? "completed" : "active",
-      action: (
-        <StartAnalysisButton
-          projectId={id}
-          disabled={approvedCount === 0}
-        />
-      ),
-    },
-    {
-      icon: BarChart2,
-      title: "Rivedi analisi",
-      description: "Consulta il tuo score, le entità estratte e i gap nella copertura dei contenuti.",
-      status: !hasScore ? "disabled" : "active",
-      action: (
-        <Button asChild size="sm" variant="outline" disabled={!hasScore}>
+      description: "Estrai entità, genera embedding e calcola il tuo AI Readiness Score. Poi consulta score, entità e gap di copertura.",
+      status: rawContentCount === 0 ? "disabled" : hasScore ? "completed" : "active",
+      action: hasScore ? (
+        <Button asChild size="sm" variant="outline">
           <Link href={`/projects/${id}/analysis`}>Vai all&apos;analisi</Link>
         </Button>
+      ) : (
+        <StartAnalysisButton
+          projectId={id}
+          disabled={rawContentCount === 0}
+        />
       ),
     },
     {
