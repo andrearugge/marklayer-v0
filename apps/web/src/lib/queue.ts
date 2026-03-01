@@ -93,13 +93,21 @@ export type GenerateContentSuggestionsPayload = {
   analysisJobId: string;
 };
 
+export type GenerateBriefsPayload = {
+  jobType: "GENERATE_BRIEFS";
+  projectId: string;
+  userId: string;
+  analysisJobId: string;
+};
+
 export type AnalysisJobPayload =
   | ExtractEntitiesPayload
   | GenerateEmbeddingsPayload
   | ClusterTopicsPayload
   | ComputeScorePayload
   | FullAnalysisPayload
-  | GenerateContentSuggestionsPayload;
+  | GenerateContentSuggestionsPayload
+  | GenerateBriefsPayload;
 
 // ─── Connection ───────────────────────────────────────────────────────────────
 

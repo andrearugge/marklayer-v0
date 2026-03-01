@@ -36,6 +36,7 @@ import type {
   ComputeScorePayload,
   FullAnalysisPayload,
   GenerateContentSuggestionsPayload,
+  GenerateBriefsPayload,
 } from "../lib/queue";
 import { computeScoreDimensions } from "../lib/scoring";
 import { generateSuggestions } from "../lib/suggestions";
@@ -837,6 +838,255 @@ async function runGenerateContentSuggestions(
   return { processed, skipped: itemsRaw.length - processed - errors, errors };
 }
 
+// ─── GENERATE_BRIEFS handler ──────────────────────────────────────────────────
+
+const KEY_PLATFORMS_WORKER = new Set(["WEBSITE", "LINKEDIN", "MEDIUM", "SUBSTACK", "YOUTUBE", "NEWS"]);
+
+const PLATFORM_LABELS_WORKER: Record<string, string> = {
+  WEBSITE: "Website", SUBSTACK: "Substack", MEDIUM: "Medium",
+  LINKEDIN: "LinkedIn", REDDIT: "Reddit", QUORA: "Quora",
+  YOUTUBE: "YouTube", TWITTER: "Twitter / X", NEWS: "News", OTHER: "Altro",
+};
+
+interface BriefsResult {
+  briefsGenerated: number;
+  skipped: number;
+  errors: number;
+}
+
+interface GapEntry {
+  gapType: string;
+  gapLabel: string;
+  platform: string;
+  severity: "critical" | "warning";
+}
+
+async function runGenerateBriefs(
+  payload: GenerateBriefsPayload
+): Promise<BriefsResult> {
+  const { projectId } = payload;
+
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { name: true },
+  });
+  const projectName = project?.name ?? "Progetto";
+
+  const now = new Date();
+  const sixMonthsAgo = new Date(now); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const twelveMonthsAgo = new Date(now); twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+
+  // ── Fetch all data needed for gap analysis ──
+  const [
+    byPlatform,
+    rawTopics,
+    rawEntities,
+    approvedCount,
+    freshCount,
+    staleCount,
+    totalWithDateCount,
+    topEntities,
+    recentTitlesRaw,
+  ] = await Promise.all([
+    prisma.contentItem.groupBy({
+      by: ["sourcePlatform"],
+      where: { projectId },
+      _count: { _all: true },
+    }),
+    prisma.entity.findMany({
+      where: { projectId, type: "TOPIC" },
+      orderBy: { frequency: "desc" },
+      select: { label: true, frequency: true },
+    }),
+    prisma.entity.findMany({
+      where: { projectId, NOT: { type: "TOPIC" } },
+      orderBy: { frequency: "desc" },
+      take: 10,
+      select: { label: true, type: true, frequency: true },
+    }),
+    prisma.contentItem.count({ where: { projectId, status: "APPROVED" } }),
+    prisma.contentItem.count({ where: { projectId, publishedAt: { gte: sixMonthsAgo } } }),
+    prisma.contentItem.count({ where: { projectId, publishedAt: { lt: twelveMonthsAgo } } }),
+    prisma.contentItem.count({ where: { projectId, publishedAt: { not: null } } }),
+    prisma.entity.findMany({
+      where: { projectId, NOT: { type: "TOPIC" } },
+      orderBy: { frequency: "desc" },
+      take: 10,
+      select: { label: true },
+    }),
+    prisma.contentItem.findMany({
+      where: { projectId, status: "APPROVED" },
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      select: { title: true },
+    }),
+  ]);
+
+  const topEntityLabels = topEntities.map((e) => e.label);
+  const existingTitles = recentTitlesRaw.map((t) => t.title);
+  const platformsWithContent = new Set(byPlatform.map((r) => r.sourcePlatform as string));
+
+  // ── Build gaps (mirrors gap-analysis-card.tsx logic) ──
+  const gaps: GapEntry[] = [];
+
+  // 1. Missing key platforms
+  for (const platform of KEY_PLATFORMS_WORKER) {
+    if (!platformsWithContent.has(platform)) {
+      gaps.push({
+        gapType: "PLATFORM",
+        gapLabel: PLATFORM_LABELS_WORKER[platform] ?? platform,
+        platform,
+        severity: "warning",
+      });
+    }
+  }
+
+  // 2. Weak platform presence (≤ 2 content items on key platform)
+  for (const r of byPlatform) {
+    const p = r.sourcePlatform as string;
+    if (KEY_PLATFORMS_WORKER.has(p) && r._count._all <= 2) {
+      gaps.push({
+        gapType: "PLATFORM",
+        gapLabel: PLATFORM_LABELS_WORKER[p] ?? p,
+        platform: p,
+        severity: "warning",
+      });
+    }
+  }
+
+  // 3. Thin topic clusters
+  for (const t of rawTopics.filter((t) => t.frequency < 3)) {
+    gaps.push({
+      gapType: "TOPIC",
+      gapLabel: t.label,
+      platform: "WEBSITE",
+      severity: t.frequency <= 1 ? "critical" : "warning",
+    });
+  }
+
+  // 4. Low-coverage entities (only when ≥ 5 approved)
+  if (approvedCount >= 5) {
+    for (const e of rawEntities
+      .filter(
+        (e) =>
+          ["BRAND", "PERSON", "ORGANIZATION", "PRODUCT"].includes(e.type) &&
+          e.frequency / approvedCount < 0.25
+      )
+      .slice(0, 3)) {
+      const pct = Math.round((e.frequency / approvedCount) * 100);
+      gaps.push({
+        gapType: "ENTITY",
+        gapLabel: e.label,
+        platform: "WEBSITE",
+        severity: pct < 10 ? "critical" : "warning",
+      });
+    }
+  }
+
+  // 5. Freshness gaps
+  if (totalWithDateCount > 0) {
+    const stalePct = Math.round((staleCount / totalWithDateCount) * 100);
+    if (stalePct > 50) {
+      gaps.push({ gapType: "FRESHNESS", gapLabel: "Contenuto datato (>50%)", platform: "WEBSITE", severity: "critical" });
+    } else if (stalePct > 25) {
+      gaps.push({ gapType: "FRESHNESS", gapLabel: "Parte del contenuto è datata", platform: "WEBSITE", severity: "warning" });
+    }
+    if (freshCount === 0) {
+      gaps.push({ gapType: "FRESHNESS", gapLabel: "Nessun contenuto recente", platform: "WEBSITE", severity: "critical" });
+    } else if (freshCount < 3 && approvedCount >= 5) {
+      gaps.push({ gapType: "FRESHNESS", gapLabel: "Pochi contenuti recenti", platform: "WEBSITE", severity: "warning" });
+    }
+  }
+
+  if (gaps.length === 0) {
+    return { briefsGenerated: 0, skipped: 0, errors: 0 };
+  }
+
+  let briefsGenerated = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const gap of gaps) {
+    // Check if a non-REJECTED brief already exists for this gap
+    const existing = await prisma.contentBrief.findUnique({
+      where: { projectId_gapType_gapLabel: { projectId, gapType: gap.gapType, gapLabel: gap.gapLabel } },
+      select: { id: true, status: true },
+    });
+    if (existing && existing.status !== "REJECTED") {
+      skipped++;
+      continue;
+    }
+
+    try {
+      const engineRes = await fetch(`${ENGINE_URL}/api/analyze/content-brief`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-engine-api-key": ENGINE_API_KEY },
+        body: JSON.stringify({
+          gap_type: gap.gapType,
+          gap_label: gap.gapLabel,
+          top_entities: topEntityLabels,
+          existing_titles: existingTitles,
+          platform: gap.platform,
+          project_name: projectName,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      if (!engineRes.ok) {
+        console.warn(`[worker] Brief generation failed for gap "${gap.gapLabel}": HTTP ${engineRes.status}`);
+        errors++;
+        continue;
+      }
+
+      const data = (await engineRes.json()) as {
+        title: string;
+        key_points: string[];
+        entities: string[];
+        target_word_count: number | null;
+        notes: string | null;
+      };
+
+      const generatedAt = new Date();
+      await prisma.contentBrief.upsert({
+        where: { projectId_gapType_gapLabel: { projectId, gapType: gap.gapType, gapLabel: gap.gapLabel } },
+        update: {
+          title: data.title,
+          platform: gap.platform as SourcePlatform,
+          keyPoints: data.key_points as unknown as Prisma.InputJsonValue,
+          entities: data.entities as unknown as Prisma.InputJsonValue,
+          targetWordCount: data.target_word_count ?? null,
+          notes: data.notes ?? null,
+          status: "PENDING",
+          generatedAt,
+          updatedAt: generatedAt,
+        },
+        create: {
+          projectId,
+          title: data.title,
+          platform: gap.platform as SourcePlatform,
+          gapType: gap.gapType,
+          gapLabel: gap.gapLabel,
+          keyPoints: data.key_points as unknown as Prisma.InputJsonValue,
+          entities: data.entities as unknown as Prisma.InputJsonValue,
+          targetWordCount: data.target_word_count ?? null,
+          notes: data.notes ?? null,
+          generatedAt,
+        },
+      });
+
+      briefsGenerated++;
+    } catch (err) {
+      console.warn(
+        `[worker] Brief error for gap "${gap.gapLabel}":`,
+        err instanceof Error ? err.message : String(err)
+      );
+      errors++;
+    }
+  }
+
+  return { briefsGenerated, skipped, errors };
+}
+
 // ─── FULL_ANALYSIS handler ────────────────────────────────────────────────────
 
 const MIN_EMBEDDINGS_FOR_CLUSTER = 6;
@@ -1061,6 +1311,8 @@ const analysisWorker = new Worker<AnalysisJobPayload>(
         resultSummary = await runFullAnalysis(payload);
       } else if (payload.jobType === "GENERATE_CONTENT_SUGGESTIONS") {
         resultSummary = await runGenerateContentSuggestions(payload);
+      } else if (payload.jobType === "GENERATE_BRIEFS") {
+        resultSummary = await runGenerateBriefs(payload);
       } else {
         throw new Error(`Unknown analysis job type: ${(payload as { jobType: string }).jobType}`);
       }

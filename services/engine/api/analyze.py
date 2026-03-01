@@ -221,6 +221,132 @@ async def generate_content_suggestion(
     return ContentSuggestionResponse(id=body.id, suggestions=[])
 
 
+# ─── Content-brief models ────────────────────────────────────────────────────
+
+
+class ContentBriefRequest(BaseModel):
+    gap_type: str
+    gap_label: str
+    top_entities: list[str]
+    existing_titles: list[str]
+    platform: str
+    project_name: str
+
+
+class ContentBriefResponse(BaseModel):
+    title: str
+    key_points: list[str]
+    entities: list[str]
+    target_word_count: int | None = None
+    notes: str | None = None
+
+
+# ─── Content-brief endpoint ───────────────────────────────────────────────────
+
+
+@router.post("/content-brief", response_model=ContentBriefResponse)
+async def generate_content_brief(
+    body: ContentBriefRequest,
+    _: None = Depends(verify_api_key),
+) -> ContentBriefResponse:
+    """
+    Generate a structured content brief for a specific gap using Claude Haiku.
+    Falls back to a minimal brief on LLM error.
+    """
+    if not settings.anthropic_api_key:
+        return ContentBriefResponse(
+            title=f"Contenuto su {body.gap_label}",
+            key_points=["Approfondire l'argomento", "Citare fonti autorevoli"],
+            entities=body.top_entities[:3],
+        )
+
+    entities_str = ", ".join(body.top_entities[:10]) if body.top_entities else "nessuna"
+    titles_str = (
+        "\n".join(f"- {t}" for t in body.existing_titles[:3])
+        if body.existing_titles
+        else "nessun contenuto esistente"
+    )
+    gap_type_labels = {
+        "PLATFORM": "Assenza/debolezza su piattaforma",
+        "TOPIC": "Topic poco coperto",
+        "ENTITY": "Entità citata raramente",
+        "FRESHNESS": "Contenuto datato",
+    }
+    gap_type_label = gap_type_labels.get(body.gap_type, body.gap_type)
+
+    prompt = (
+        f"Progetto/Brand: {body.project_name}\n"
+        f"Tipo di gap: {gap_type_label}\n"
+        f"Gap specifico: {body.gap_label}\n"
+        f"Piattaforma target: {body.platform}\n"
+        f"Entità chiave del progetto: {entities_str}\n"
+        f"Titoli di contenuti esistenti (stile di riferimento):\n{titles_str}\n\n"
+        "Genera un brief strutturato per un nuovo contenuto che colmi questo gap. "
+        "Rispondi ESCLUSIVAMENTE con un oggetto JSON valido (nient'altro) con questa struttura:\n"
+        '{\n'
+        '  "title": "titolo proposto (max 80 caratteri)",\n'
+        '  "key_points": ["punto 1", "punto 2", "punto 3", "punto 4", "punto 5"],\n'
+        '  "entities": ["entità1", "entità2", "entità3"],\n'
+        '  "target_word_count": 800,\n'
+        '  "notes": "note aggiuntive brevi (opzionale, può essere null)"\n'
+        "}\n\n"
+        "I key_points devono essere 5 punti concreti da coprire nel contenuto. "
+        "Le entities devono essere 3-5 termini/nomi chiave da menzionare. "
+        "Il target_word_count deve essere appropriato per la piattaforma (blog: 800-1200, LinkedIn: 400-600, Twitter: 200). "
+        "Rispondi solo con JSON, senza markdown, senza testo extra."
+    )
+
+    import json
+
+    client: anthropic.AsyncAnthropic | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            if client is None:
+                client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+            response = await client.messages.create(
+                model=_MODEL,
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response.content[0].text.strip()
+            # Strip possible markdown code fences
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            parsed = json.loads(raw.strip())
+            return ContentBriefResponse(
+                title=str(parsed.get("title", f"Contenuto su {body.gap_label}")),
+                key_points=[str(p) for p in parsed.get("key_points", [])[:5]],
+                entities=[str(e) for e in parsed.get("entities", [])[:5]],
+                target_word_count=parsed.get("target_word_count"),
+                notes=parsed.get("notes") or None,
+            )
+        except anthropic.RateLimitError:
+            import asyncio
+
+            if attempt < _MAX_RETRIES - 1:
+                await asyncio.sleep(2**attempt)
+                continue
+        except Exception as exc:
+            logger.warning("Content brief generation failed: %s", exc)
+            break
+
+    return ContentBriefResponse(
+        title=f"Contenuto su {body.gap_label}",
+        key_points=[
+            "Introduzione all'argomento",
+            "Punti chiave e benefici",
+            "Esempi pratici e casi d'uso",
+            "Best practice e consigli",
+            "Conclusioni e prossimi passi",
+        ],
+        entities=body.top_entities[:3],
+        target_word_count=800,
+        notes="Brief generato con fallback statico — rigenera per un brief personalizzato.",
+    )
+
+
 # ─── Cluster topics models ────────────────────────────────────────────────────
 
 
