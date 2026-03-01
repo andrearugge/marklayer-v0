@@ -120,6 +120,8 @@ function getRedisConnection() {
       port: Number(parsed.port) || 6379,
       password: parsed.password || undefined,
       db: Number(parsed.pathname.slice(1)) || 0,
+      // Upstash and other TLS Redis providers use rediss:// scheme
+      tls: url.startsWith("rediss://") ? {} : undefined,
     };
   } catch {
     return { host: "localhost", port: 6379 };

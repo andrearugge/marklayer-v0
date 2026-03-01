@@ -1,0 +1,14 @@
+# Railway configuration for the BullMQ worker service
+# Set this file as the config source in the Railway service settings.
+#
+# Service: worker
+# Root Directory: . (monorepo root)
+
+[build]
+builder = "nixpacks"
+buildCommand = "npm install && npm run db:generate --workspace=apps/web"
+
+[deploy]
+startCommand = "npm run worker --workspace=apps/web"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
