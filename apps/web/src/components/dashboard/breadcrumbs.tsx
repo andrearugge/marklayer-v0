@@ -3,39 +3,38 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { NAV_ITEMS } from "./nav-items";
+import { useProjectNav } from "./project-nav-context";
 
 const SEGMENT_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
-  projects: "Projects",
+  projects: "Progetti",
   content: "Contenuti",
+  discovery: "Discovery",
+  analysis: "Analisi",
   graph: "Graph",
-  settings: "Settings",
+  briefs: "Brief",
+  actions: "Azioni",
+  settings: "Impostazioni",
   admin: "Admin",
   users: "Users",
   profile: "Profile",
   "audit-log": "Audit Log",
 };
 
-// UUID v4 pattern — show "Detail" instead of the raw ID in breadcrumbs
+// UUID v4 pattern — replaced by project name when available
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function getLabel(segment: string): string {
-  if (UUID_RE.test(segment)) return "Detail";
+function getLabel(segment: string, projectName?: string): string {
+  if (UUID_RE.test(segment)) return projectName ?? "Dettaglio";
   return SEGMENT_LABELS[segment] ?? segment.charAt(0).toUpperCase() + segment.slice(1);
 }
 
 export function Breadcrumbs() {
   const pathname = usePathname();
+  const projectNav = useProjectNav();
 
   const segments = pathname.split("/").filter(Boolean);
-
-  // Find the root nav item for the first segment
-  const rootItem = NAV_ITEMS.find(
-    (item) => pathname === item.href || pathname.startsWith(item.href + "/")
-  );
-
   if (segments.length === 0) return null;
 
   const crumbs: { label: string; href: string }[] = [];
@@ -43,15 +42,14 @@ export function Breadcrumbs() {
 
   for (const segment of segments) {
     currentPath += `/${segment}`;
-    crumbs.push({ label: getLabel(segment), href: currentPath });
+    crumbs.push({
+      label: getLabel(segment, UUID_RE.test(segment) ? projectNav?.projectName : undefined),
+      href: currentPath,
+    });
   }
 
   if (crumbs.length <= 1) {
-    return (
-      <span className="text-sm font-medium">
-        {rootItem?.label ?? crumbs[0]?.label}
-      </span>
-    );
+    return <span className="text-sm font-medium">{crumbs[0]?.label}</span>;
   }
 
   return (
@@ -65,9 +63,7 @@ export function Breadcrumbs() {
                 <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
               )}
               {isLast ? (
-                <span className="font-medium text-foreground">
-                  {crumb.label}
-                </span>
+                <span className="font-medium text-foreground">{crumb.label}</span>
               ) : (
                 <Link
                   href={crumb.href}
