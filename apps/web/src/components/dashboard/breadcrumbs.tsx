@@ -3,7 +3,6 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { useProjectNav } from "./project-nav-context";
 
 const SEGMENT_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
@@ -21,18 +20,17 @@ const SEGMENT_LABELS: Record<string, string> = {
   "audit-log": "Audit Log",
 };
 
-// UUID v4 pattern — replaced by project name when available
+// UUID v4 — shown as "Dettaglio" in breadcrumbs (project name enhancement: step 14)
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function getLabel(segment: string, projectName?: string): string {
-  if (UUID_RE.test(segment)) return projectName ?? "Dettaglio";
+function getLabel(segment: string): string {
+  if (UUID_RE.test(segment)) return "Dettaglio";
   return SEGMENT_LABELS[segment] ?? segment.charAt(0).toUpperCase() + segment.slice(1);
 }
 
 export function Breadcrumbs() {
   const pathname = usePathname();
-  const projectNav = useProjectNav();
 
   const segments = pathname.split("/").filter(Boolean);
   if (segments.length === 0) return null;
@@ -42,10 +40,7 @@ export function Breadcrumbs() {
 
   for (const segment of segments) {
     currentPath += `/${segment}`;
-    crumbs.push({
-      label: getLabel(segment, UUID_RE.test(segment) ? projectNav?.projectName : undefined),
-      href: currentPath,
-    });
+    crumbs.push({ label: getLabel(segment), href: currentPath });
   }
 
   if (crumbs.length <= 1) {

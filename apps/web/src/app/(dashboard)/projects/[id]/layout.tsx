@@ -1,8 +1,13 @@
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ProjectNavProvider } from "@/components/dashboard/project-nav-context";
 
+/**
+ * Project layout — ownership guard only.
+ * Sets no extra wrappers to avoid Next.js streaming hydration mismatches
+ * (Client Component wrappers at layout level interfere with Suspense boundaries).
+ * The sidebar reads project info client-side via useParams() + fetch.
+ */
 export default async function ProjectLayout({
   params,
   children,
@@ -17,14 +22,10 @@ export default async function ProjectLayout({
 
   const project = await prisma.project.findFirst({
     where: { id, userId: currentUser.id },
-    select: { id: true, name: true, status: true },
+    select: { id: true },
   });
 
   if (!project) notFound();
 
-  return (
-    <ProjectNavProvider projectId={project.id} projectName={project.name}>
-      {children}
-    </ProjectNavProvider>
-  );
+  return <>{children}</>;
 }

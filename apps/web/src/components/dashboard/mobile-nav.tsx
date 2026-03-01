@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { ArrowLeft, Menu, ShieldCheck, ClipboardList } from "lucide-react";
+import { useParams, usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { ArrowLeft, Menu, ShieldCheck, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS, getProjectNavItems } from "./nav-items";
-import { useProjectNav } from "./project-nav-context";
 
 function isActive(pathname: string, itemHref: string, projectBase?: string): boolean {
   if (projectBase && itemHref === projectBase) {
@@ -27,9 +26,27 @@ function isActive(pathname: string, itemHref: string, projectBase?: string): boo
 export function MobileNav({ projectCount }: { projectCount?: number }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const params = useParams();
   const { data: session } = useSession();
-  const projectNav = useProjectNav();
   const isAdmin = session?.user?.role === "admin";
+
+  const projectId = typeof params.id === "string" ? params.id : null;
+  const isInProject = !!projectId && pathname.startsWith(`/projects/${projectId}`);
+
+  const [projectName, setProjectName] = useState<string>("");
+
+  useEffect(() => {
+    if (!projectId) {
+      setProjectName("");
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/projects/${projectId}`)
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled && d.data?.name) setProjectName(d.data.name); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   const close = () => setOpen(false);
 
@@ -64,7 +81,7 @@ export function MobileNav({ projectCount }: { projectCount?: number }) {
         </SheetHeader>
 
         <div className="py-4">
-          {projectNav ? (
+          {isInProject ? (
             /* ── PROJECT NAV ─────────────────────────────────── */
             <nav className="space-y-1 px-2">
               <Link
@@ -76,23 +93,23 @@ export function MobileNav({ projectCount }: { projectCount?: number }) {
                 Tutti i progetti
               </Link>
 
-              <div className="px-3 pt-3 pb-1">
-                <p
-                  className="truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-                  title={projectNav.projectName}
-                >
-                  {projectNav.projectName}
-                </p>
-              </div>
+              {projectName && (
+                <div className="px-3 pt-3 pb-1">
+                  <p
+                    className="truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                    title={projectName}
+                  >
+                    {projectName}
+                  </p>
+                </div>
+              )}
 
-              {getProjectNavItems(projectNav.projectId).map((item) => (
+              {getProjectNavItems(projectId!).map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
                   onClick={close}
-                  className={linkClass(
-                    isActive(pathname, item.href, `/projects/${projectNav.projectId}`)
-                  )}
+                  className={linkClass(isActive(pathname, item.href, `/projects/${projectId}`))}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   {item.label}
@@ -126,7 +143,6 @@ export function MobileNav({ projectCount }: { projectCount?: number }) {
             </nav>
           )}
 
-          {/* Admin section */}
           {isAdmin && (
             <div className="mt-4 px-2">
               <p className="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
