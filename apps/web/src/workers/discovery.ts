@@ -68,6 +68,22 @@ async function logAudit(
   }
 }
 
+// ─── Notification helper ──────────────────────────────────────────────────────
+
+async function createNotification(
+  userId: string,
+  type: string,
+  title: string,
+  message: string,
+  link: string
+): Promise<void> {
+  try {
+    await prisma.notification.create({ data: { userId, type, title, message, link } });
+  } catch (err) {
+    console.error("[worker] Notification create failed:", err);
+  }
+}
+
 // ─── Safe DB update (guard against record-not-found on stale jobs) ────────────
 
 async function safeUpdateJob(
@@ -1233,6 +1249,27 @@ const worker = new Worker<DiscoveryJobPayload>(
         ...resultSummary,
       });
 
+      // Send notification to project owner
+      const notifProject = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { name: true },
+      });
+      if (notifProject) {
+        const foundCount =
+          payload.jobType === "CRAWL_SITE"
+            ? (resultSummary as CrawlResult).created
+            : payload.jobType === "SEARCH_PLATFORM"
+            ? (resultSummary as SearchResult).created
+            : (resultSummary as { totalCreated: number }).totalCreated;
+        await createNotification(
+          userId,
+          "discovery",
+          "Discovery completata",
+          `La discovery per "${notifProject.name}" è terminata con ${foundCount} contenuti trovati.`,
+          `/projects/${projectId}/content/discovery`
+        );
+      }
+
       console.log(`[worker] Job ${job.id} completed:`, JSON.stringify(resultSummary));
     } catch (err) {
       const isEngineDown =
@@ -1327,6 +1364,37 @@ const analysisWorker = new Worker<AnalysisJobPayload>(
         analysisJobId,
         ...resultSummary,
       });
+
+      // Send notification for relevant job types
+      if (
+        payload.jobType === "FULL_ANALYSIS" ||
+        payload.jobType === "GENERATE_BRIEFS"
+      ) {
+        const notifProject = await prisma.project.findUnique({
+          where: { id: projectId },
+          select: { name: true },
+        });
+        if (notifProject) {
+          if (payload.jobType === "FULL_ANALYSIS") {
+            await createNotification(
+              userId,
+              "analysis",
+              "Analisi AI completata",
+              `L'analisi di "${notifProject.name}" è completata. Score aggiornato.`,
+              `/projects/${projectId}/analysis`
+            );
+          } else {
+            const briefCount = (resultSummary as BriefsResult).briefsGenerated;
+            await createNotification(
+              userId,
+              "briefs",
+              "Brief generati",
+              `${briefCount} brief generati per "${notifProject.name}".`,
+              `/projects/${projectId}/briefs`
+            );
+          }
+        }
+      }
 
       console.log(
         `[worker] Analysis job ${job.id} completed:`,
