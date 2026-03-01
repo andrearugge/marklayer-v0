@@ -233,6 +233,7 @@ model ContentItem {
   language        String?         @db.VarChar(10)
   publishedAt     DateTime?       @map("published_at")
   lastCrawledAt   DateTime?       @map("last_crawled_at")
+  fetchError      String?         @map("fetch_error") @db.Text
   metadata        Json?           @db.JsonB
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")

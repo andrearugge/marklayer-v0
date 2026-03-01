@@ -93,13 +93,30 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       });
 
       if (!engineRes.ok) {
-        // Skip this batch on engine error, count all as errors
+        // Mark all items in this batch as errored
+        await Promise.all(
+          batch.map((item) =>
+            prisma.contentItem.update({
+              where: { id: item.id },
+              data: { fetchError: `Engine error ${engineRes.status}` },
+            })
+          )
+        );
         errors += batch.length;
         continue;
       }
 
       engineData = (await engineRes.json()) as EngineExtractResponse;
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Engine non raggiungibile";
+      await Promise.all(
+        batch.map((item) =>
+          prisma.contentItem.update({
+            where: { id: item.id },
+            data: { fetchError: msg },
+          })
+        )
+      );
       errors += batch.length;
       continue;
     }
@@ -114,6 +131,12 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       batch.map(async (item) => {
         const result = resultByUrl.get(item.url as string);
         if (!result || result.error || !result.raw_content) {
+          // Store error message so the UI can surface it
+          const errorMsg = result?.error ?? "Contenuto non estratto o URL non raggiungibile";
+          await prisma.contentItem.update({
+            where: { id: item.id },
+            data: { fetchError: errorMsg },
+          });
           errors++;
           return;
         }
@@ -125,6 +148,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
             wordCount: result.word_count ?? null,
             excerpt: result.excerpt ?? null,
             lastCrawledAt: new Date(),
+            fetchError: null, // clear any previous error on success
             ...(result.published_at
               ? { publishedAt: new Date(result.published_at) }
               : {}),

@@ -82,7 +82,7 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
       ? { publishedAt: sortOrder }
       : { createdAt: sortOrder };
 
-  const [rawItems, contentTotal, totalCount, byPlatform, byType, byStatus, unfetchedCount] =
+  const [rawItems, contentTotal, totalCount, byPlatform, byType, byStatus, unfetchedCount, fetchErrorCount] =
     await Promise.all([
       prisma.contentItem.findMany({
         where: contentWhere,
@@ -96,6 +96,8 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
           wordCount: true,
           publishedAt: true,
           createdAt: true,
+          rawContent: true,
+          fetchError: true,
         },
         orderBy,
         skip: (page - 1) * limit,
@@ -128,11 +130,16 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
           status: { not: "REJECTED" },
         },
       }),
+      prisma.contentItem.count({
+        where: { projectId: id, fetchError: { not: null } },
+      }),
     ]);
 
   const totalPages = Math.ceil(contentTotal / limit);
-  const items = rawItems.map((item) => ({
+  const items = rawItems.map(({ rawContent, ...item }) => ({
     ...item,
+    hasRawContent: rawContent !== null,
+    fetchError: item.fetchError ?? null,
     publishedAt: item.publishedAt?.toISOString() ?? null,
     createdAt: item.createdAt.toISOString(),
   }));
@@ -283,7 +290,7 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
                 </p>
               </div>
             ) : (
-              <ContentTable items={items} projectId={id} />
+              <ContentTable items={items} projectId={id} fetchErrorCount={fetchErrorCount} />
             )}
 
             <ContentPagination page={page} totalPages={totalPages} total={contentTotal} />
