@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
@@ -20,19 +21,29 @@ const SEGMENT_LABELS: Record<string, string> = {
   "audit-log": "Audit Log",
 };
 
-// UUID v4 — shown as "Dettaglio" in breadcrumbs (project name enhancement: step 14)
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function getLabel(segment: string): string {
-  if (UUID_RE.test(segment)) return "Dettaglio";
-  return SEGMENT_LABELS[segment] ?? segment.charAt(0).toUpperCase() + segment.slice(1);
-}
-
 export function Breadcrumbs() {
   const pathname = usePathname();
+  const [projectName, setProjectName] = useState<string>("");
 
   const segments = pathname.split("/").filter(Boolean);
+  const projectId = segments.find((s) => UUID_RE.test(s)) ?? null;
+
+  useEffect(() => {
+    if (!projectId) {
+      setProjectName("");
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/projects/${projectId}`)
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled && d.data?.name) setProjectName(d.data.name); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [projectId]);
+
   if (segments.length === 0) return null;
 
   const crumbs: { label: string; href: string }[] = [];
@@ -40,7 +51,13 @@ export function Breadcrumbs() {
 
   for (const segment of segments) {
     currentPath += `/${segment}`;
-    crumbs.push({ label: getLabel(segment), href: currentPath });
+    let label: string;
+    if (UUID_RE.test(segment)) {
+      label = projectName || "…";
+    } else {
+      label = SEGMENT_LABELS[segment] ?? segment.charAt(0).toUpperCase() + segment.slice(1);
+    }
+    crumbs.push({ label, href: currentPath });
   }
 
   if (crumbs.length <= 1) {

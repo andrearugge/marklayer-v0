@@ -52,10 +52,11 @@ function buildHref(
   type: string,
   page: number
 ): string {
-  const params = new URLSearchParams({ tab: "analysis" });
+  const params = new URLSearchParams();
   if (type && type !== "ALL") params.set("entityType", type);
   if (page > 1) params.set("entityPage", String(page));
-  return `/projects/${projectId}?${params.toString()}`;
+  const qs = params.toString();
+  return `/projects/${projectId}/analysis${qs ? `?${qs}` : ""}`;
 }
 
 export function EntitiesPanel({ projectId, entities, activeType, page, totalPages, total }: Props) {
