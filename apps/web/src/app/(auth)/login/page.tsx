@@ -20,9 +20,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   // NextAuth may set callbackUrl to the error page URL itself when redirecting
   // after an OAuth failure (e.g. OAuthAccountNotLinked).
   const safeCallbackUrl = (() => {
-    const url = callbackUrl ?? "/dashboard";
+    const url = callbackUrl ?? "/projects";
     if (url.startsWith("/login") || url.startsWith("/register") || url.includes("error=")) {
-      return "/dashboard";
+      return "/projects";
     }
     return url;
   })();

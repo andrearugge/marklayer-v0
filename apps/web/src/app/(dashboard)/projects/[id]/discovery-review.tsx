@@ -292,7 +292,7 @@ export function DiscoveryReview({
           <span className="ml-auto text-xs text-muted-foreground">
             Mostrati {items.length} di {totalDiscovered} —{" "}
             <Link
-              href={`/projects/${projectId}?status=DISCOVERED`}
+              href={`/projects/${projectId}/content?status=DISCOVERED`}
               className="underline hover:no-underline"
             >
               vedi tutti

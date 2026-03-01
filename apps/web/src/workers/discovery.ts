@@ -16,7 +16,7 @@ import { config } from "dotenv";
 // Load env before any other import that might need env vars
 config({ path: path.resolve(process.cwd(), ".env.local") });
 
-import { Worker } from "bullmq";
+import { Worker, Queue } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { Prisma, SourcePlatform, ContentType } from "@prisma/client";
@@ -65,6 +65,22 @@ async function logAudit(
     });
   } catch (err) {
     console.error("[worker] Audit log failed:", err);
+  }
+}
+
+// ─── Notification helper ──────────────────────────────────────────────────────
+
+async function createNotification(
+  userId: string,
+  type: string,
+  title: string,
+  message: string,
+  link: string
+): Promise<void> {
+  try {
+    await prisma.notification.create({ data: { userId, type, title, message, link } });
+  } catch (err) {
+    console.error("[worker] Notification create failed:", err);
   }
 }
 
@@ -1233,6 +1249,27 @@ const worker = new Worker<DiscoveryJobPayload>(
         ...resultSummary,
       });
 
+      // Send notification to project owner
+      const notifProject = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { name: true },
+      });
+      if (notifProject) {
+        const foundCount =
+          payload.jobType === "CRAWL_SITE"
+            ? (resultSummary as CrawlResult).created
+            : payload.jobType === "SEARCH_PLATFORM"
+            ? (resultSummary as SearchResult).created
+            : (resultSummary as { totalCreated: number }).totalCreated;
+        await createNotification(
+          userId,
+          "discovery",
+          "Discovery completata",
+          `La discovery per "${notifProject.name}" è terminata con ${foundCount} contenuti trovati.`,
+          `/projects/${projectId}/content/discovery`
+        );
+      }
+
       console.log(`[worker] Job ${job.id} completed:`, JSON.stringify(resultSummary));
     } catch (err) {
       const isEngineDown =
@@ -1328,6 +1365,37 @@ const analysisWorker = new Worker<AnalysisJobPayload>(
         ...resultSummary,
       });
 
+      // Send notification for relevant job types
+      if (
+        payload.jobType === "FULL_ANALYSIS" ||
+        payload.jobType === "GENERATE_BRIEFS"
+      ) {
+        const notifProject = await prisma.project.findUnique({
+          where: { id: projectId },
+          select: { name: true },
+        });
+        if (notifProject) {
+          if (payload.jobType === "FULL_ANALYSIS") {
+            await createNotification(
+              userId,
+              "analysis",
+              "Analisi AI completata",
+              `L'analisi di "${notifProject.name}" è completata. Score aggiornato.`,
+              `/projects/${projectId}/analysis`
+            );
+          } else {
+            const briefCount = (resultSummary as BriefsResult).briefsGenerated;
+            await createNotification(
+              userId,
+              "briefs",
+              "Brief generati",
+              `${briefCount} brief generati per "${notifProject.name}".`,
+              `/projects/${projectId}/briefs`
+            );
+          }
+        }
+      }
+
       console.log(
         `[worker] Analysis job ${job.id} completed:`,
         JSON.stringify(resultSummary)
@@ -1376,12 +1444,53 @@ analysisWorker.on("failed", (job, err) =>
 
 console.log(`[worker] Analysis worker started — queue: ${ANALYSIS_QUEUE_NAME}`);
 
+// ─── Maintenance queue (scheduled jobs) ──────────────────────────────────────
+
+const MAINTENANCE_QUEUE_NAME = "maintenance";
+
+const maintenanceQueue = new Queue(MAINTENANCE_QUEUE_NAME, {
+  connection: redisConnection,
+});
+
+const maintenanceWorker = new Worker(
+  MAINTENANCE_QUEUE_NAME,
+  async (job) => {
+    if (job.name === "CLEANUP_AUDIT_LOGS") {
+      const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const { count } = await prisma.auditLog.deleteMany({
+        where: { createdAt: { lt: cutoff } },
+      });
+      console.log(`[maintenance] Deleted ${count} audit log${count === 1 ? "" : "s"} older than 7 days`);
+    }
+  },
+  { connection: redisConnection }
+);
+
+maintenanceWorker.on("failed", (job, err) =>
+  console.error(`[maintenance] ✗ Job ${job?.id} failed:`, err.message)
+);
+
+// Schedule daily cleanup at 03:00 server time.
+// The stable jobId prevents duplicate schedules across worker restarts.
+await maintenanceQueue.add(
+  "CLEANUP_AUDIT_LOGS",
+  {},
+  {
+    repeat: { pattern: "0 3 * * *" },
+    jobId: "cleanup-audit-logs-daily",
+  }
+);
+
+console.log("[worker] Maintenance worker started — audit log cleanup scheduled at 03:00 daily");
+
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 
 async function shutdown() {
   console.log("[worker] Shutting down...");
   await worker.close();
   await analysisWorker.close();
+  await maintenanceWorker.close();
+  await maintenanceQueue.close();
   await prisma.$disconnect();
   process.exit(0);
 }

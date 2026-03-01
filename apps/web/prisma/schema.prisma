@@ -32,9 +32,10 @@ model User {
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
-  accounts Account[]
-  sessions Session[]
-  projects Project[]
+  accounts      Account[]
+  sessions      Session[]
+  projects      Project[]
+  notifications Notification[]
 
   @@map("users")
 }
@@ -95,6 +96,23 @@ model AuditLog {
   @@index([targetId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  type      String   @db.VarChar(50)
+  title     String   @db.VarChar(255)
+  message   String   @db.Text
+  link      String   @db.VarChar(500)
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }
 
 // ─── Project enums ────────────────────────────────────────────────────────────
@@ -233,6 +251,7 @@ model ContentItem {
   language        String?         @db.VarChar(10)
   publishedAt     DateTime?       @map("published_at")
   lastCrawledAt   DateTime?       @map("last_crawled_at")
+  fetchError      String?         @map("fetch_error") @db.Text
   metadata        Json?           @db.JsonB
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")

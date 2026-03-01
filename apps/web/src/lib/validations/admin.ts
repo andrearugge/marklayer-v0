@@ -43,6 +43,6 @@ export const CreateUserSchema = z.object({
     .min(8, "Minimo 8 caratteri")
     .regex(/[A-Z]/, "Richiesta almeno una lettera maiuscola")
     .regex(/[0-9]/, "Richiesto almeno un numero"),
-  role: z.enum(["user", "admin"]).default("user"),
+  role: z.enum(["user", "admin"]),
 });
 export type CreateUserFormValues = z.infer<typeof CreateUserSchema>;

@@ -97,7 +97,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     );
   }
 
-  const { name, description, domain } = parsed.data;
+  const { name, description, domain, status } = parsed.data;
 
   const updated = await prisma.project.update({
     where: { id },
@@ -105,6 +105,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       ...(name !== undefined && { name }),
       ...(description !== undefined && { description: description || null }),
       ...(domain !== undefined && { domain: domain || null }),
+      ...(status !== undefined && { status }),
     },
     select: {
       id: true,
