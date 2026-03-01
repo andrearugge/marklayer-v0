@@ -104,6 +104,26 @@ async function safeUpdateJob(
 const ENGINE_URL = process.env.ENGINE_URL ?? "http://localhost:8000";
 const ENGINE_API_KEY = process.env.ENGINE_API_KEY ?? "";
 
+// ─── Schedule helper ──────────────────────────────────────────────────────────
+
+function calcNextRunAt(frequency: string, from: Date): Date {
+  const d = new Date(from);
+  switch (frequency) {
+    case "weekly":
+      d.setDate(d.getDate() + 7);
+      break;
+    case "monthly":
+      d.setMonth(d.getMonth() + 1);
+      break;
+    case "quarterly":
+      d.setMonth(d.getMonth() + 3);
+      break;
+    default:
+      d.setDate(d.getDate() + 7);
+  }
+  return d;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function hashUrl(url: string): string {
@@ -1452,6 +1472,11 @@ const maintenanceQueue = new Queue(MAINTENANCE_QUEUE_NAME, {
   connection: redisConnection,
 });
 
+// Local queue reference used by the maintenance worker to enqueue discovery jobs
+const localDiscoveryQueue = new Queue<DiscoveryJobPayload>(DISCOVERY_QUEUE_NAME, {
+  connection: redisConnection,
+});
+
 const maintenanceWorker = new Worker(
   MAINTENANCE_QUEUE_NAME,
   async (job) => {
@@ -1461,6 +1486,54 @@ const maintenanceWorker = new Worker(
         where: { createdAt: { lt: cutoff } },
       });
       console.log(`[maintenance] Deleted ${count} audit log${count === 1 ? "" : "s"} older than 7 days`);
+    }
+
+    if (job.name === "CHECK_DISCOVERY_SCHEDULES") {
+      const now = new Date();
+      const dueSchedules = await prisma.discoverySchedule.findMany({
+        where: { enabled: true, nextRunAt: { lte: now } },
+      });
+
+      for (const schedule of dueSchedules) {
+        try {
+          // Create the DiscoveryJob record
+          const dbJob = await prisma.discoveryJob.create({
+            data: {
+              projectId: schedule.projectId,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              jobType: schedule.jobType as any,
+              status: "PENDING",
+              config: schedule.config as Prisma.InputJsonValue,
+            },
+          });
+
+          // Enqueue to discovery queue
+          await localDiscoveryQueue.add(schedule.jobType, {
+            jobType: schedule.jobType,
+            projectId: schedule.projectId,
+            userId: schedule.userId,
+            discoveryJobId: dbJob.id,
+            config: schedule.config,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any);
+
+          // Advance nextRunAt
+          const next = calcNextRunAt(schedule.frequency, now);
+          await prisma.discoverySchedule.update({
+            where: { id: schedule.id },
+            data: { lastRunAt: now, nextRunAt: next },
+          });
+
+          console.log(
+            `[maintenance] Enqueued scheduled ${schedule.jobType} for project ${schedule.projectId} (${schedule.frequency}) — next: ${next.toISOString()}`
+          );
+        } catch (err) {
+          console.error(
+            `[maintenance] Failed to enqueue schedule ${schedule.id}:`,
+            err instanceof Error ? err.message : String(err)
+          );
+        }
+      }
     }
   },
   { connection: redisConnection }
@@ -1481,7 +1554,17 @@ await maintenanceQueue.add(
   }
 );
 
-console.log("[worker] Maintenance worker started — audit log cleanup scheduled at 03:00 daily");
+// Check discovery schedules every hour.
+await maintenanceQueue.add(
+  "CHECK_DISCOVERY_SCHEDULES",
+  {},
+  {
+    repeat: { pattern: "0 * * * *" },
+    jobId: "check-discovery-schedules-hourly",
+  }
+);
+
+console.log("[worker] Maintenance worker started — audit log cleanup @ 03:00 daily, discovery schedule check @ every hour");
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 
@@ -1491,6 +1574,7 @@ async function shutdown() {
   await analysisWorker.close();
   await maintenanceWorker.close();
   await maintenanceQueue.close();
+  await localDiscoveryQueue.close();
   await prisma.$disconnect();
   process.exit(0);
 }

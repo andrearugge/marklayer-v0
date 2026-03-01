@@ -74,3 +74,14 @@ export const BulkActionSchema = z
   );
 
 export type BulkActionData = z.infer<typeof BulkActionSchema>;
+
+// ─── Discovery schedule ───────────────────────────────────────────────────────
+
+export const DiscoveryScheduleSchema = z.object({
+  jobType: z.enum(["FULL_DISCOVERY", "CRAWL_SITE", "SEARCH_PLATFORM"]),
+  frequency: z.enum(["weekly", "monthly", "quarterly"]),
+  config: z.record(z.string(), z.unknown()),
+  enabled: z.boolean().default(true),
+});
+
+export type DiscoveryScheduleValues = z.infer<typeof DiscoveryScheduleSchema>;

@@ -11,7 +11,6 @@ import { TopicsPanel } from "../topics-panel";
 import { ContentHealthCard } from "../content-health-card";
 import { GapAnalysisCard } from "../gap-analysis-card";
 import { GenerateSuggestionsButton } from "../generate-suggestions-button";
-import { SemanticSearchPanel } from "../semantic-search-panel";
 import type { SerializedAnalysisJob } from "../analysis-job-status";
 import type { SerializedProjectScore } from "../score-card";
 import type { EntityItem } from "../entities-panel";
@@ -232,9 +231,6 @@ export default async function AnalysisPage({ params, searchParams }: PageProps) 
 
       {/* ── Gap analysis ── */}
       <GapAnalysisCard data={gapData} />
-
-      {/* ── Semantic search ── */}
-      <SemanticSearchPanel projectId={id} />
 
       {/* ── Batch suggestions ── */}
       {totalCount > 0 && (

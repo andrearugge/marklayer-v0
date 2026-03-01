@@ -6,6 +6,7 @@ import { StartDiscoveryDialog } from "../../start-discovery-dialog";
 import { DiscoveryJobStatus } from "../../discovery-job-status";
 import { DiscoveryReview } from "../../discovery-review";
 import { FetchContentButton } from "../../fetch-content-button";
+import { DiscoveryScheduleCard } from "../../discovery-schedule-card";
 import type { SerializedDiscoveryJob } from "../../discovery-job-status";
 import type { DiscoveredItem } from "../../discovery-review";
 import { History } from "lucide-react";
@@ -135,6 +136,12 @@ export default async function DiscoveryPage({ params }: PageProps) {
           />
         </div>
       </div>
+
+      {/* ── Recurring schedule ── */}
+      <DiscoveryScheduleCard
+        projectId={id}
+        projectDomain={project.domain}
+      />
 
       {/* ── Current job status ── */}
       <section className="space-y-3">

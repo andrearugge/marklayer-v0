@@ -18,6 +18,7 @@ import { ContentFilters } from "../content-filters";
 import { ContentPagination } from "../content-pagination";
 import { ContentTable } from "../content-table";
 import { FetchContentButton } from "../fetch-content-button";
+import { DiscoveryScheduleBanner } from "../discovery-schedule-banner";
 import { FileText, Radar } from "lucide-react";
 import type { SourcePlatform, ContentType, ContentStatus, Prisma } from "@prisma/client";
 
@@ -90,7 +91,7 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
       ? { publishedAt: sortOrder }
       : { createdAt: sortOrder };
 
-  const [rawItems, contentTotal, totalCount, byPlatform, byType, byStatus, unfetchedCount, fetchErrorCount] =
+  const [rawItems, contentTotal, totalCount, byPlatform, byType, byStatus, unfetchedCount, fetchErrorCount, discoverySchedule] =
     await Promise.all([
       prisma.contentItem.findMany({
         where: contentWhere,
@@ -141,6 +142,10 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
       prisma.contentItem.count({
         where: { projectId: id, fetchError: { not: null } },
       }),
+      prisma.discoverySchedule.findUnique({
+        where: { projectId: id },
+        select: { frequency: true, nextRunAt: true, lastRunAt: true, enabled: true },
+      }),
     ]);
 
   const totalPages = Math.ceil(contentTotal / limit);
@@ -185,6 +190,16 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
           )}
         </div>
       </div>
+
+      {/* ── Discovery schedule reminder ── */}
+      {discoverySchedule?.enabled && (
+        <DiscoveryScheduleBanner
+          frequency={discoverySchedule.frequency}
+          nextRunAt={discoverySchedule.nextRunAt}
+          lastRunAt={discoverySchedule.lastRunAt}
+          projectId={id}
+        />
+      )}
 
       {/* ── Breakdown cards (shown only when there's content) ── */}
       {totalCount > 0 && (

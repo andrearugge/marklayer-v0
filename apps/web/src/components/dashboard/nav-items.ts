@@ -7,6 +7,7 @@ import {
   Network,
   BookOpen,
   Lightbulb,
+  Search,
 } from "lucide-react";
 
 export interface NavItem {
@@ -29,6 +30,7 @@ export function getProjectNavItems(projectId: string): NavItem[] {
     { label: "Dashboard", href: base, icon: LayoutDashboard },
     { label: "Contenuti", href: `${base}/content`, icon: FileText },
     { label: "Analisi", href: `${base}/analysis`, icon: BarChart2 },
+    { label: "Ricerca", href: `${base}/search`, icon: Search },
     { label: "Graph", href: `${base}/graph`, icon: Network },
     { label: "Brief", href: `${base}/briefs`, icon: BookOpen },
     { label: "Azioni", href: `${base}/actions`, icon: Lightbulb },
