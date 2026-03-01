@@ -36,7 +36,7 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
 
   const isArchived = project.status === "ARCHIVED";
   const rawSearch = await searchParams;
-  const limit = 20;
+  const limit = 50;
 
   // ── Parse query ─────────────────────────────────────────────────────────────
 
@@ -48,6 +48,7 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
     search: rawSearch.search,
     sortBy: rawSearch.sortBy,
     sortOrder: rawSearch.sortOrder,
+    fetchStatus: rawSearch.fetchStatus,
   });
 
   const q = contentQuery.success
@@ -61,9 +62,11 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
         search: undefined,
         sortBy: "createdAt" as const,
         sortOrder: "desc" as const,
+        fetchStatus: undefined,
       };
 
-  const { page, search, sourcePlatform, contentType, status, sortBy, sortOrder } = q;
+  const { page, search, sourcePlatform, contentType, status, sortBy, sortOrder, fetchStatus } =
+    q;
 
   // ── Fetch data ───────────────────────────────────────────────────────────────
 
@@ -73,6 +76,11 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
     ...(sourcePlatform ? { sourcePlatform } : {}),
     ...(contentType ? { contentType } : {}),
     ...(search ? { title: { contains: search, mode: "insensitive" } } : {}),
+    ...(fetchStatus === "fetched" ? { rawContent: { not: null } } : {}),
+    ...(fetchStatus === "pending"
+      ? { rawContent: null, fetchError: null, url: { not: null } }
+      : {}),
+    ...(fetchStatus === "error" ? { fetchError: { not: null } } : {}),
   };
 
   const orderBy: Prisma.ContentItemOrderByWithRelationInput =
@@ -281,6 +289,7 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
               initialPlatform={(sourcePlatform as string) ?? ""}
               initialType={(contentType as string) ?? ""}
               initialStatus={(status as string) ?? ""}
+              initialFetchStatus={(fetchStatus as string) ?? ""}
             />
 
             {items.length === 0 ? (
@@ -290,7 +299,19 @@ export default async function ContentPage({ params, searchParams }: PageProps) {
                 </p>
               </div>
             ) : (
-              <ContentTable items={items} projectId={id} fetchErrorCount={fetchErrorCount} />
+              <ContentTable
+                items={items}
+                projectId={id}
+                fetchErrorCount={fetchErrorCount}
+                totalFilteredCount={contentTotal}
+                currentFilters={{
+                  status: (status as string) || undefined,
+                  sourcePlatform: (sourcePlatform as string) || undefined,
+                  contentType: (contentType as string) || undefined,
+                  search: search || undefined,
+                  fetchStatus: (fetchStatus as string) || undefined,
+                }}
+              />
             )}
 
             <ContentPagination page={page} totalPages={totalPages} total={contentTotal} />
